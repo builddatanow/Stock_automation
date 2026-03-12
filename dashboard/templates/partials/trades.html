@@ -1,0 +1,70 @@
+{% macro pc(v) %}{% set f = v|float %}{% if f > 0 %}pnl-pos{% elif f < 0 %}pnl-neg{% else %}pnl-zero{% endif %}{% endmacro %}
+{% for t in trades %}
+{% set ticker = 'spx' if 'SPX' in t.bot_name else ('eth' if 'ETH' in t.bot_name else 'btc') %}
+<tr data-ticker="{{ ticker }}" data-demo="{{ 'true' if t.get('is_demo') else 'false' }}">
+
+  <!-- Date / Time -->
+  <td style="font-size:12px; color:#6b7280; font-family:'Consolas',monospace; white-space:nowrap;">
+    {{ t.get('exit_time','')[:16] }}
+  </td>
+
+  <!-- Bot name -->
+  <td>
+    <span style="font-size:13px; font-weight:700; color:
+      {%- if 'ETH 0' in t.bot_name %}#2563eb
+      {%- elif 'ETH 7' in t.bot_name %}#0891b2
+      {%- elif 'BTC' in t.bot_name %}#d97706
+      {%- else %}#7c3aed
+      {%- endif %};">{{ t.bot_name }}</span>
+  </td>
+
+  <!-- Account (Live / Demo) -->
+  <td>
+    {% if t.get('is_demo') %}
+      <span class="pill-demo">DEMO</span>
+    {% else %}
+      <span class="pill-live">LIVE</span>
+    {% endif %}
+  </td>
+
+  <!-- Window -->
+  <td style="font-size:12px; color:#6b7280;">{{ t.get('window','') }}</td>
+
+  <!-- Spread type -->
+  <td>
+    <span style="background:#f1f5f9; color:#374151; padding:3px 9px; border-radius:5px; font-size:11.5px; border:1px solid #dde3ee; font-weight:500; white-space:nowrap;">
+      {{ t.get('spread_type','') }}
+    </span>
+  </td>
+
+  <!-- Legs / Strikes -->
+  <td style="font-size:12px; font-family:'Consolas',monospace; color:#374151; white-space:nowrap;">
+    {% if t.get('legs') %}{{ t.legs }}
+    {% elif t.get('short_instrument') %}{{ t.short_instrument }} / {{ t.get('long_instrument','') }}
+    {% endif %}
+  </td>
+
+  <!-- Credit -->
+  <td style="font-size:12px; color:#6b7280;">
+    {{ t.get('credit_eth', t.get('credit_btc','')) }}
+  </td>
+
+  <!-- P&L -->
+  <td class="text-end {{ pc(t.get('pnl_usd','0')) }}" style="font-size:13px; font-family:'Consolas',monospace; font-weight:700; white-space:nowrap;">
+    {% set v = t.get('pnl_usd','0')|float %}
+    {% if v > 0 %}+{% endif %}${{ "%.2f"|format(v) }}
+  </td>
+
+  <!-- Status / Reason -->
+  <td style="font-size:12px; color:#94a3b8;">
+    {{ t.get('exit_reason', t.get('status','')) }}
+  </td>
+
+</tr>
+{% else %}
+<tr>
+  <td colspan="9" class="text-center py-5" style="color:#94a3b8;">
+    <i class="bi bi-inbox me-2" style="font-size:18px;"></i><br>No trades recorded yet
+  </td>
+</tr>
+{% endfor %}

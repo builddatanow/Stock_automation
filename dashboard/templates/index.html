@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trading Dashboard</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.10/dist/htmx.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ── Base ── */
+body {
+  background: #eef2f7;
+  color: #1e293b;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 13.5px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ── Top Navbar ── */
+.top-nav {
+  background: #1e293b;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 52px;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  box-shadow: 0 2px 8px rgba(0,0,0,.18);
+}
+.brand {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f1f5f9;
+  letter-spacing: -0.3px;
+  white-space: nowrap;
+}
+.brand i { color: #22c55e; margin-right: 6px; }
+
+/* ── Ticker Tabs ── */
+.ticker-tabs {
+  display: flex;
+  gap: 4px;
+  margin-left: 8px;
+}
+.ticker-tab {
+  padding: 6px 18px;
+  border-radius: 6px;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+  background: transparent;
+  color: #94a3b8;
+}
+.ticker-tab:hover { color: #e2e8f0; background: rgba(255,255,255,.08); }
+.ticker-tab.active { background: #fff; color: #1e293b; }
+.ticker-tab.active.tab-eth  { border-bottom: 3px solid #3b82f6; }
+.ticker-tab.active.tab-btc  { border-bottom: 3px solid #f59e0b; }
+.ticker-tab.active.tab-spx  { border-bottom: 3px solid #8b5cf6; }
+.ticker-tab.active.tab-all  { border-bottom: 3px solid #22c55e; }
+
+/* ── SPX mode bar ── */
+#spx-mode-bar {
+  background: #fff;
+  border-bottom: 2px solid #8b5cf6;
+  padding: 8px 28px;
+  display: none;
+  align-items: center;
+  gap: 12px;
+}
+.mode-pill {
+  padding: 5px 20px;
+  border-radius: 20px;
+  border: 1.5px solid #cbd5e1;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #64748b;
+  transition: all .15s;
+}
+.mode-pill:hover { border-color: #8b5cf6; color: #7c3aed; }
+.mode-pill.active-live  { background: #ecfdf5; border-color: #059669; color: #059669; }
+.mode-pill.active-demo  { background: #f3f4f6; border-color: #6b7280; color: #4b5563; }
+
+/* ── Cards ── */
+.card {
+  background: #fff;
+  border: 1px solid #dde3ee;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.05);
+  overflow: hidden;
+}
+.card-header {
+  background: #f8fafc;
+  border-bottom: 1px solid #e8edf4;
+  padding: 11px 16px;
+  font-weight: 600;
+  font-size: 13px;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.card-header .label-muted {
+  font-size: 11px;
+  color: #9ca3af;
+  font-weight: 400;
+  margin-left: auto;
+}
+.card-body { padding: 16px; }
+
+/* ── Section label ── */
+.section-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: #94a3b8;
+  margin-bottom: 9px;
+  padding-left: 1px;
+}
+
+/* ── Tables ── */
+.table { color: #1e293b; margin: 0; }
+.table thead tr { background: #f8fafc; }
+.table th {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: #64748b;
+  border-color: #e8edf4;
+  padding: 9px 14px;
+  white-space: nowrap;
+}
+.table td {
+  border-color: #eef2f7;
+  padding: 9px 14px;
+  vertical-align: middle;
+  color: #1e293b;
+}
+.table tbody tr:hover > td { background: #f8fafc; }
+.table-striped > tbody > tr:nth-of-type(odd) > * {
+  background: #fbfcfe;
+  color: #1e293b;
+}
+
+/* ── P&L colours ── */
+.pnl-pos { color: #059669 !important; font-weight: 600; }
+.pnl-neg { color: #dc2626 !important; font-weight: 600; }
+.pnl-zero { color: #9ca3af; }
+
+/* ── Status badges ── */
+.badge-running {
+  background: #ecfdf5; color: #059669;
+  border: 1.5px solid #6ee7b7;
+  font-size: 11px; padding: 3px 10px; border-radius: 20px;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.badge-running::before {
+  content: ''; width: 7px; height: 7px;
+  background: #059669; border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+.badge-stopped {
+  background: #fef2f2; color: #dc2626;
+  border: 1.5px solid #fca5a5;
+  font-size: 11px; padding: 3px 10px; border-radius: 20px;
+}
+.badge-circuit {
+  background: #fffbeb; color: #d97706;
+  border: 1.5px solid #fcd34d;
+  font-size: 11px; padding: 3px 10px; border-radius: 20px;
+}
+.badge-external {
+  background: #f5f3ff; color: #7c3aed;
+  border: 1.5px solid #c4b5fd;
+  font-size: 11px; padding: 3px 10px; border-radius: 20px;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* ── Stat blocks ── */
+.stat-val { font-size: 1.55rem; font-weight: 700; line-height: 1.1; color: #111827; }
+.stat-label { font-size: 10.5px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.8px; margin-top: 3px; }
+.stat-box { padding: 14px 16px; border-right: 1px solid #eef2f7; }
+.stat-box:last-child { border-right: none; }
+
+/* ── Account pills ── */
+.pill-live { background:#ecfdf5; color:#059669; border:1.5px solid #6ee7b7; padding:3px 12px; border-radius:20px; font-size:11px; font-weight:700; }
+.pill-demo { background:#f3f4f6; color:#6b7280; border:1.5px solid #d1d5db; padding:3px 12px; border-radius:20px; font-size:11px; }
+
+/* ── Filter buttons ── */
+.filter-btn {
+  font-size: 11.5px; padding: 5px 13px; border-radius: 6px;
+  border: 1.5px solid #dde3ee; background: #fff;
+  color: #64748b; cursor: pointer; transition: all .15s; white-space: nowrap;
+  font-weight: 500;
+}
+.filter-btn:hover { border-color: #3b82f6; color: #2563eb; }
+.filter-btn.active { background: #eff6ff; border-color: #3b82f6; color: #2563eb; font-weight: 600; }
+
+/* ── Log box ── */
+.log-box {
+  background: #1e2433; border: 1px solid #dde3ee; border-radius: 8px;
+  height: 260px; overflow-y: auto;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 11.5px; padding: 10px 14px; line-height: 1.7; color: #94a3b8;
+}
+.log-box .log-info  { color: #60a5fa; }
+.log-box .log-warn  { color: #fbbf24; }
+.log-box .log-error { color: #f87171; }
+.log-box .log-ok    { color: #4ade80; }
+
+/* ── Nav tabs ── */
+.nav-tabs { border-bottom: 2px solid #e8edf4; gap: 2px; }
+.nav-tabs .nav-link {
+  color: #94a3b8; border: none;
+  border-bottom: 2px solid transparent; margin-bottom: -2px;
+  padding: 8px 16px; font-size: 12px; font-weight: 500; background: transparent;
+}
+.nav-tabs .nav-link:hover { color: #374151; }
+.nav-tabs .nav-link.active { color: #2563eb; background: transparent; border-bottom: 2px solid #2563eb; }
+
+/* ── Misc ── */
+#clock { font-size: 12px; color: #64748b; font-family: 'Consolas', monospace; margin-left: auto; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+
+/* ── Bot name colours ── */
+.c-eth  { color: #2563eb; font-weight: 600; }
+.c-eth7 { color: #0891b2; font-weight: 600; }
+.c-btc  { color: #d97706; font-weight: 600; }
+.c-spx  { color: #7c3aed; font-weight: 600; }
+
+/* ── SPX sections ── */
+.spx-live-card {
+  background: #f0fdf4;
+  border: 1.5px solid #86efac;
+  border-radius: 10px; padding: 18px 20px;
+}
+.spx-demo-card {
+  background: #f9fafb;
+  border: 1.5px solid #d1d5db;
+  border-radius: 10px; padding: 18px 20px;
+}
+
+/* ── Visibility control ── */
+.ticker-section { display: block; }
+.ticker-section.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<!-- ── Top Navbar ── -->
+<div class="top-nav">
+  <div class="brand"><i class="bi bi-activity"></i>Trading Dashboard</div>
+
+  <div class="ticker-tabs">
+    <button class="ticker-tab tab-all active" onclick="setTicker('all', this)">
+      <i class="bi bi-grid-3x3-gap me-1"></i>All
+    </button>
+    <button class="ticker-tab tab-eth" onclick="setTicker('eth', this)">
+      <i class="bi bi-currency-exchange me-1"></i>ETH
+    </button>
+    <button class="ticker-tab tab-btc" onclick="setTicker('btc', this)">
+      <i class="bi bi-currency-bitcoin me-1"></i>BTC
+    </button>
+    <button class="ticker-tab tab-spx" onclick="setTicker('spx', this)">
+      <i class="bi bi-graph-up-arrow me-1"></i>SPX
+    </button>
+  </div>
+
+  <div id="clock"></div>
+</div>
+
+<!-- ── SPX Mode Bar (shown only when SPX tab active) ── -->
+<div id="spx-mode-bar">
+  <span style="font-size:12px; color:#7c3aed; font-weight:600;"><i class="bi bi-graph-up-arrow me-1"></i>SPX 0 DTE &nbsp;&mdash;&nbsp; Account:</span>
+  <button class="mode-pill active-live" id="pill-live" onclick="setSpxMode('live')">
+    <i class="bi bi-circle-fill me-1" style="font-size:8px;"></i>Live
+  </button>
+  <button class="mode-pill" id="pill-demo" onclick="setSpxMode('demo')">
+    <i class="bi bi-circle me-1" style="font-size:8px;"></i>Demo
+  </button>
+  <span style="font-size:11px; color:#94a3b8; margin-left:8px;"><i class="bi bi-clock me-1"></i>1PM ET entry &middot; Capital: $10,000</span>
+</div>
+
+<div class="container-fluid px-4 py-3" style="max-width:1600px; margin:0 auto;">
+
+  <!-- ── Bot Status ── -->
+  <div class="section-label mt-2">Active Bots</div>
+  <div class="row g-3 mb-4" id="status-cards"
+       hx-get="/partials/status" hx-trigger="load, every 5s" hx-swap="innerHTML">
+    <div class="col-12 text-center py-3" style="color:#94a3b8;">Loading...</div>
+  </div>
+
+  <!-- ── Performance Overview ── -->
+  <div class="section-label ticker-section" data-show="all eth btc spx">Performance Overview</div>
+  <div class="row g-3 mb-4">
+    <!-- P&L Table -->
+    <div class="col-xl-5 col-lg-6 ticker-section" data-show="all eth btc spx">
+      <div class="card h-100">
+        <div class="card-header">
+          <i class="bi bi-cash-stack" style="color:#059669;"></i>
+          P&amp;L Summary
+          <span class="label-muted">Live accounts only</span>
+        </div>
+        <div class="card-body p-0" id="pnl-summary"
+             hx-get="/partials/pnl" hx-trigger="load, every 10s" hx-swap="innerHTML">
+          <div class="text-center py-4" style="color:#94a3b8;">Loading...</div>
+        </div>
+      </div>
+    </div>
+    <!-- Equity Chart -->
+    <div class="col-xl-7 col-lg-6 ticker-section" data-show="all eth btc spx">
+      <div class="card h-100">
+        <div class="card-header">
+          <i class="bi bi-graph-up" style="color:#3b82f6;"></i>
+          Equity Curve
+          <span class="label-muted">Cumulative P&amp;L &middot; SPX demo = dashed</span>
+        </div>
+        <div class="card-body">
+          <canvas id="equityChart" height="120"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SPX Results Section ── -->
+  <div class="section-label ticker-section hidden" data-show="spx">SPX 0 DTE Results</div>
+  <div class="card mb-4 ticker-section hidden" data-show="spx">
+    <div class="card-header">
+      <i class="bi bi-graph-up-arrow c-spx"></i>
+      <span class="c-spx">SPX 0 DTE</span>
+      <span style="font-size:11px; color:#94a3b8; font-weight:400; margin-left:4px;">TradeAutomationToolbox &middot; from Jan 1, 2026</span>
+    </div>
+    <div class="card-body" id="spx-stats"
+         hx-get="/partials/spx" hx-trigger="load, every 15s" hx-swap="innerHTML">
+      <div class="text-center py-3" style="color:#94a3b8;">Loading SPX data...</div>
+    </div>
+  </div>
+
+  <!-- ── Open Positions ── -->
+  <div class="section-label">Open Positions</div>
+  <div class="card mb-4">
+    <div class="card-header">
+      <i class="bi bi-layers" style="color:#d97706;"></i>Active Positions
+    </div>
+    <div class="card-body p-0" id="positions-table"
+         hx-get="/partials/positions" hx-trigger="load, every 5s" hx-swap="innerHTML">
+      <div class="text-center py-3" style="color:#94a3b8;">Loading...</div>
+    </div>
+  </div>
+
+  <!-- ── Trade Log ── -->
+  <div class="section-label">Trade History</div>
+  <div class="card mb-4">
+    <div class="card-header">
+      <i class="bi bi-journal-text" style="color:#0891b2;"></i>
+      Transaction Log
+      <span id="trade-count" style="font-size:11px; color:#9ca3af; font-weight:400;"></span>
+      <div class="d-flex gap-2 flex-wrap ms-auto" id="trade-filters">
+        <button class="filter-btn active" onclick="setTradeFilter(this, '')">All</button>
+        <button class="filter-btn" onclick="setTradeFilter(this, 'eth')">ETH</button>
+        <button class="filter-btn" onclick="setTradeFilter(this, 'btc')">BTC</button>
+        <button class="filter-btn" onclick="setTradeFilter(this, 'spx-live')">SPX Live</button>
+        <button class="filter-btn" onclick="setTradeFilter(this, 'spx-demo')">SPX Demo</button>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm table-striped mb-0">
+          <thead>
+            <tr>
+              <th>Date / Time</th>
+              <th>Bot</th>
+              <th>Account</th>
+              <th>Window</th>
+              <th>Type</th>
+              <th>Legs / Strikes</th>
+              <th>Credit</th>
+              <th class="text-end">P&amp;L</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="trade-tbody"
+                 hx-get="/partials/trades" hx-trigger="load, every 10s" hx-swap="innerHTML">
+            <tr><td colspan="9" class="text-center py-4" style="color:#94a3b8;">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Live Logs ── -->
+  <div class="section-label">Live Logs</div>
+  <div class="card mb-4">
+    <div class="card-header">
+      <i class="bi bi-terminal"></i>Log Viewer
+    </div>
+    <div class="card-body">
+      <ul class="nav nav-tabs mb-3" id="logTabs">
+        <li class="nav-item"><a class="nav-link active" onclick="loadLog('eth_0dte', this)" href="#">ETH 0 DTE</a></li>
+        <li class="nav-item"><a class="nav-link" onclick="loadLog('eth_7dte', this)" href="#">ETH 7 DTE</a></li>
+        <li class="nav-item"><a class="nav-link" onclick="loadLog('btc_0dte', this)" href="#">BTC 0 DTE</a></li>
+      </ul>
+      <div id="log-box" class="log-box">Loading...</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Clock ──
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toUTCString().replace(' GMT', ' UTC');
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Ticker Tabs ──
+let currentTicker = 'all';
+let currentSpxMode = 'live';
+
+function setTicker(ticker, btn) {
+  currentTicker = ticker;
+
+  // Update tab active state
+  document.querySelectorAll('.ticker-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+
+  // Show/hide SPX mode bar
+  const modeBar = document.getElementById('spx-mode-bar');
+  modeBar.style.display = (ticker === 'spx') ? 'flex' : 'none';
+
+  // Apply pnl row filter
+  applyPnlFilter();
+
+  // Sync trade filter with ticker
+  if (ticker === 'all') {
+    setTradeFilter(document.querySelector('[onclick="setTradeFilter(this, \'\')"]'), '');
+  } else if (ticker === 'spx') {
+    const f = currentSpxMode === 'demo' ? 'spx-demo' : 'spx-live';
+    const btn2 = document.querySelector(`[onclick="setTradeFilter(this, '${f}')"]`);
+    if (btn2) setTradeFilter(btn2, f);
+  } else {
+    const btn2 = document.querySelector(`[onclick="setTradeFilter(this, '${ticker}')"]`);
+    if (btn2) setTradeFilter(btn2, ticker);
+  }
+}
+
+function setSpxMode(mode) {
+  currentSpxMode = mode;
+  document.getElementById('pill-live').className = 'mode-pill' + (mode === 'live' ? ' active-live' : '');
+  document.getElementById('pill-demo').className = 'mode-pill' + (mode === 'demo' ? ' active-demo' : '');
+
+  // Sync trade filter
+  const f = mode === 'demo' ? 'spx-demo' : 'spx-live';
+  const btn2 = document.querySelector(`[onclick="setTradeFilter(this, '${f}')"]`);
+  if (btn2) setTradeFilter(btn2, f);
+
+  // Sync SPX stats section mode
+  applySpxStatsMode();
+}
+
+function applySpxStatsMode() {
+  // Show/hide live vs demo box in spx.html partial
+  document.querySelectorAll('.spx-live-card, .spx-demo-card').forEach(el => {
+    if (currentTicker !== 'spx') return;
+    const isLiveBox = el.classList.contains('spx-live-card');
+    el.style.opacity = (currentSpxMode === 'live') === isLiveBox ? '1' : '0.35';
+  });
+}
+
+function applyPnlFilter() {
+  document.querySelectorAll('#pnl-summary tbody tr[data-ticker]').forEach(row => {
+    const t = row.dataset.ticker;
+    const m = row.dataset.mode;
+    let show = true;
+    if (currentTicker !== 'all') {
+      if (t !== currentTicker) show = false;
+      if (t === 'spx' && m !== currentSpxMode) show = false;
+    }
+    row.style.display = show ? '' : 'none';
+  });
+}
+
+// ── Equity Chart ──
+let equityChart = null;
+function loadChart() {
+  fetch('/api/chart').then(r => r.json()).then(datasets => {
+    const ctx = document.getElementById('equityChart').getContext('2d');
+    if (equityChart) equityChart.destroy();
+    equityChart = new Chart(ctx, {
+      type: 'line',
+      data: { datasets },
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: '#64748b', font: { size: 12 }, boxWidth: 14, padding: 18 } },
+          tooltip: {
+            backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
+            titleColor: '#94a3b8', bodyColor: '#f1f5f9', padding: 10,
+            callbacks: { label: ctx => ` ${ctx.dataset.label}: $${ctx.parsed.y.toFixed(2)}` }
+          }
+        },
+        scales: {
+          x: {
+            type: 'category',
+            ticks: { color: '#94a3b8', font: { size: 11 }, maxRotation: 0, maxTicksLimit: 10 },
+            grid: { color: '#f1f5f9' }
+          },
+          y: {
+            ticks: { color: '#94a3b8', font: { size: 11 }, callback: v => '$' + v.toFixed(0) },
+            grid: { color: '#f1f5f9' }
+          }
+        }
+      }
+    });
+  });
+}
+loadChart();
+setInterval(loadChart, 30000);
+
+// ── Log Viewer ──
+let currentLogBot = 'eth_0dte';
+function loadLog(botId, el) {
+  currentLogBot = botId;
+  document.querySelectorAll('#logTabs .nav-link').forEach(a => a.classList.remove('active'));
+  if (el) el.classList.add('active');
+  fetchLog();
+}
+function fetchLog() {
+  fetch('/api/logs/' + currentLogBot).then(r => r.json()).then(lines => {
+    const box = document.getElementById('log-box');
+    box.innerHTML = lines.map(l => {
+      const lu = l.toUpperCase();
+      let cls = '';
+      if (lu.includes('| INFO')) cls = 'log-info';
+      else if (lu.includes('| WARN')) cls = 'log-warn';
+      else if (lu.includes('| ERROR') || lu.includes('| CRITICAL')) cls = 'log-error';
+      else if (lu.includes('PROFIT') || lu.includes('WIN') || lu.includes('TAKE_PROFIT')) cls = 'log-ok';
+      return `<div class="${cls}">${escHtml(l)}</div>`;
+    }).join('');
+    box.scrollTop = box.scrollHeight;
+  });
+}
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+fetchLog();
+setInterval(fetchLog, 5000);
+
+// ── Trade Filter ──
+let tradeFilterKey = '';
+function setTradeFilter(btn, key) {
+  tradeFilterKey = key;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  applyTradeFilter();
+}
+function applyTradeFilter() {
+  let shown = 0;
+  document.querySelectorAll('#trade-tbody tr[data-ticker]').forEach(row => {
+    const ticker = row.dataset.ticker;
+    const isDemo = row.dataset.demo === 'true';
+    let show = true;
+    if (tradeFilterKey === 'eth')      show = ticker === 'eth';
+    else if (tradeFilterKey === 'btc') show = ticker === 'btc';
+    else if (tradeFilterKey === 'spx-live')  show = ticker === 'spx' && !isDemo;
+    else if (tradeFilterKey === 'spx-demo')  show = ticker === 'spx' && isDemo;
+    row.style.display = show ? '' : 'none';
+    if (show) shown++;
+  });
+  const el = document.getElementById('trade-count');
+  if (el) el.textContent = shown ? `(${shown})` : '';
+}
+
+// React to HTMX partial swaps
+document.addEventListener('htmx:afterSwap', e => {
+  const id = e.detail.target && e.detail.target.id;
+  if (id === 'trade-tbody') applyTradeFilter();
+  if (id === 'pnl-summary') { applyPnlFilter(); }
+  if (id === 'spx-stats') applySpxStatsMode();
+});
+</script>
+
+</body>
+</html>

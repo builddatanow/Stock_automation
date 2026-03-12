@@ -1,0 +1,66 @@
+{% macro pc(v) %}{% if v > 0 %}pnl-pos{% elif v < 0 %}pnl-neg{% else %}pnl-zero{% endif %}{% endmacro %}
+{% macro fmt(v) %}{% if v > 0 %}+${{ "%.2f"|format(v) }}{% elif v < 0 %}-${{ "%.2f"|format(v|abs) }}{% else %}$0.00{% endif %}{% endmacro %}
+{% macro fmtc(v) %}${{ "{:,.0f}".format(v) }}{% endmacro %}
+
+<table class="table table-sm mb-0">
+  <thead>
+    <tr>
+      <th>Bot</th>
+      <th>Account</th>
+      <th class="text-end">24h P&amp;L</th>
+      <th class="text-end">All-Time</th>
+      <th class="text-end">Capital</th>
+      <th class="text-end">Current</th>
+      <th class="text-end">Win%</th>
+      <th class="text-end">Trades</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for bot_id, d in data.items() %}
+    {% set ticker = 'spx' if 'spx' in bot_id else ('eth' if 'eth' in bot_id else 'btc') %}
+    {% set mode = 'demo' if d.is_demo else 'live' %}
+    <tr data-ticker="{{ ticker }}" data-mode="{{ mode }}" {% if d.is_demo %}style="opacity:.6; font-style:italic;"{% endif %}>
+      <td>
+        <span style="font-weight:700; color:
+          {%- if 'ETH 0' in d.name %}#2563eb
+          {%- elif 'ETH 7' in d.name %}#0891b2
+          {%- elif 'BTC' in d.name %}#d97706
+          {%- else %}#7c3aed
+          {%- endif %}; font-size:13px;">{{ d.name }}</span>
+      </td>
+      <td>
+        {% if d.is_demo %}
+          <span class="pill-demo">DEMO</span>
+        {% else %}
+          <span class="pill-live">LIVE</span>
+        {% endif %}
+      </td>
+      <td class="text-end {{ pc(d.today_pnl) }}" style="font-size:13px;">{{ fmt(d.today_pnl) }}</td>
+      <td class="text-end {{ pc(d.total_pnl) }}" style="font-size:13px;">{{ fmt(d.total_pnl) }}</td>
+      <td class="text-end" style="color:#94a3b8; font-size:13px;">{{ fmtc(d.capital) }}</td>
+      <td class="text-end {{ pc(d.current_capital - d.capital) }}" style="font-size:13px; font-weight:600;">{{ fmtc(d.current_capital) }}</td>
+      <td class="text-end" style="font-size:13px;">
+        <span style="font-weight:600; color:
+          {%- if d.win_pct >= 60 %}#059669
+          {%- elif d.win_pct >= 50 %}#d97706
+          {%- else %}#dc2626
+          {%- endif %};">{{ d.win_pct }}%</span>
+      </td>
+      <td class="text-end" style="font-size:13px; color:#6b7280;">{{ d.total_trades }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr style="border-top:2px solid #e8edf4; font-weight:700; background:#f8fafc;">
+      <td colspan="2" style="font-size:13px; color:#374151;">
+        Portfolio Total
+        <span style="font-size:10px; color:#9ca3af; font-weight:400;">(live only)</span>
+      </td>
+      <td class="text-end {{ pc(grand_today) }}" style="font-size:13px;">{{ fmt(grand_today) }}</td>
+      <td class="text-end {{ pc(grand_total) }}" style="font-size:13px;">{{ fmt(grand_total) }}</td>
+      <td class="text-end" style="color:#94a3b8; font-size:13px;">{{ fmtc(grand_capital) }}</td>
+      <td class="text-end {{ pc(grand_current - grand_capital) }}" style="font-size:13px;">{{ fmtc(grand_current) }}</td>
+      <td colspan="2"></td>
+    </tr>
+  </tfoot>
+</table>

@@ -1,0 +1,100 @@
+{% macro pc(v) %}{% if v > 0 %}pnl-pos{% elif v < 0 %}pnl-neg{% else %}pnl-zero{% endif %}{% endmacro %}
+{% macro fmt(v) %}{% if v > 0 %}+${{ "%.2f"|format(v) }}{% elif v < 0 %}-${{ "%.2f"|format(v|abs) }}{% else %}$0.00{% endif %}{% endmacro %}
+
+{% if live.total_trades == 0 and demo.total_trades == 0 %}
+<div class="text-center py-5" style="color:#94a3b8;">
+  <i class="bi bi-info-circle" style="font-size:22px; color:#c4b5fd;"></i>
+  <div style="margin-top:10px; font-size:14px; color:#6b7280;">No SPX trades found from Jan 1, 2026 onwards.</div>
+  <div style="font-size:12px; color:#94a3b8; margin-top:4px;">
+    TAT export CSVs (<code>export-*.csv</code>, <code>exporttest-*.csv</code>) are read automatically.
+  </div>
+</div>
+{% else %}
+<div class="row g-3">
+
+  <!-- Live Account -->
+  <div class="col-md-6">
+    <div class="spx-live-card">
+      <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+          <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:#059669; margin-bottom:4px;">Live Account</div>
+          <div style="font-size:12px; color:#6b7280;">Real money trades &middot; IBKR</div>
+        </div>
+        <span class="pill-live" style="font-size:12px; padding:5px 16px;">REAL MONEY</span>
+      </div>
+
+      <div class="row g-0 text-center">
+        <div class="col-3 stat-box" style="border-color:#bbf7d0;">
+          <div class="stat-val {{ pc(live.total_pnl) }}" style="font-size:1.5rem;">{{ fmt(live.total_pnl) }}</div>
+          <div class="stat-label">All-Time P&amp;L</div>
+        </div>
+        <div class="col-3 stat-box" style="border-color:#bbf7d0;">
+          <div class="stat-val {{ pc(live.today_pnl) }}" style="font-size:1.5rem;">{{ fmt(live.today_pnl) }}</div>
+          <div class="stat-label">24h P&amp;L</div>
+        </div>
+        <div class="col-3 stat-box" style="border-color:#bbf7d0;">
+          <div class="stat-val" style="font-size:1.5rem; color:
+            {%- if live.win_pct >= 60 %}#059669
+            {%- elif live.win_pct >= 50 %}#d97706
+            {%- else %}#dc2626
+            {%- endif %};">{{ live.win_pct }}%</div>
+          <div class="stat-label">Win Rate</div>
+        </div>
+        <div class="col-3 stat-box" style="border-color:#bbf7d0;">
+          <div class="stat-val" style="font-size:1.5rem; color:#374151;">{{ live.total_trades }}</div>
+          <div class="stat-label">Trades</div>
+        </div>
+      </div>
+
+      {% if live.today_trades > 0 %}
+      <div style="margin-top:14px; padding-top:12px; border-top:1px solid #bbf7d0; font-size:12px; color:#059669;">
+        <i class="bi bi-check-circle me-1"></i>{{ live.today_trades }} trade(s) closed in the last 24 hours
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Demo / Paper Account -->
+  <div class="col-md-6">
+    <div class="spx-demo-card">
+      <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+          <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:#6b7280; margin-bottom:4px;">Paper / Demo</div>
+          <div style="font-size:12px; color:#9ca3af;">Simulated trades &middot; IBKR paper</div>
+        </div>
+        <span class="pill-demo" style="font-size:12px; padding:5px 16px;">SIMULATED</span>
+      </div>
+
+      <div class="row g-0 text-center">
+        <div class="col-3 stat-box">
+          <div class="stat-val {{ pc(demo.total_pnl) }}" style="font-size:1.5rem;">{{ fmt(demo.total_pnl) }}</div>
+          <div class="stat-label">All-Time P&amp;L</div>
+        </div>
+        <div class="col-3 stat-box">
+          <div class="stat-val {{ pc(demo.today_pnl) }}" style="font-size:1.5rem;">{{ fmt(demo.today_pnl) }}</div>
+          <div class="stat-label">24h P&amp;L</div>
+        </div>
+        <div class="col-3 stat-box">
+          <div class="stat-val" style="font-size:1.5rem; color:#6b7280;">{{ demo.win_pct }}%</div>
+          <div class="stat-label">Win Rate</div>
+        </div>
+        <div class="col-3 stat-box">
+          <div class="stat-val" style="font-size:1.5rem; color:#9ca3af;">{{ demo.total_trades }}</div>
+          <div class="stat-label">Trades</div>
+        </div>
+      </div>
+
+      {% if demo.total_trades == 0 %}
+      <div style="margin-top:14px; padding-top:12px; border-top:1px solid #e5e7eb; font-size:12px; color:#9ca3af;">
+        <i class="bi bi-info-circle me-1"></i>No demo trades found in <code>exporttest-*.csv</code> files
+      </div>
+      {% elif demo.today_trades > 0 %}
+      <div style="margin-top:14px; padding-top:12px; border-top:1px solid #e5e7eb; font-size:12px; color:#6b7280;">
+        <i class="bi bi-check-circle me-1"></i>{{ demo.today_trades }} trade(s) closed in the last 24 hours
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endif %}
