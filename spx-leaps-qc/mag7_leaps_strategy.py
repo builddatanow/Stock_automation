@@ -10,9 +10,9 @@ import math
 # Buy LEAPS calls on the top 2 Mag7 stocks by 3-month momentum
 # Mag7: AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA
 # Core: SPY 75% + TLT 15% | LEAPS sleeve: 10% split across top 2
-# DD put: fires when SPY drops >10% from 52-week high
+# Crash Call: when SPY drops 25% from 52wk high, sell 15% SPY,
+#             buy a 300 DTE SPY LEAPS call (recovery trade)
 # Re-rank monthly — rotate into new top 2 if changed
-# Avoid earnings weeks (skip entry within 14 days of earnings)
 # Period: 2010-01-01 to 2026-02-28 | Start: $100,000
 # ============================================================
 
@@ -33,11 +33,13 @@ class Mag7LeapsStrategy(QCAlgorithm):
     FIRST_PROFIT_TARGET  = 1.00
     SECOND_PROFIT_TARGET = 1.50
 
-    DD_PUT_THRESHOLD  = 0.10   # SPY drawdown trigger for protective put
-    DD_PUT_SLEEVE     = 0.10
-    DD_PUT_DTE        = 90
-    DD_PUT_DELTA_TGT  = 0.30
-    DD_PUT_PROFIT_TGT = 2.00
+    # ── Crash Recovery Call (SPY -25% from 52wk high) ──────────────────────
+    CRASH_CALL_THRESHOLD  = 0.25   # SPY must be down 25% from 52wk peak
+    CRASH_CALL_SPY_TRIM   = 0.15   # sell this much of portfolio from SPY core
+    CRASH_CALL_DTE        = 300    # target DTE for recovery call
+    CRASH_CALL_DELTA_TGT  = 0.40   # target delta (slightly OTM to ATM)
+    CRASH_CALL_PROFIT_TGT = 1.00   # exit full position at +100%
+    CRASH_CALL_RECOVER_DD = 0.10   # exit if drawdown recovers above this level
 
     CRASH_RULES = {
         7:  -0.03,
@@ -62,6 +64,11 @@ class Mag7LeapsStrategy(QCAlgorithm):
         self.tlt = self.AddEquity("TLT", Resolution.Daily).Symbol
         self.vix = self.AddData(CBOE, "VIX", Resolution.Daily).Symbol
 
+        # SPY options for crash recovery call
+        spy_opt = self.AddOption("SPY", Resolution.Daily)
+        spy_opt.SetFilter(self._spy_option_filter)
+        self.spy_opt = spy_opt.Symbol
+
         # Add Mag7 equities + options
         self.mag7_symbols = {}
         self.mag7_option_symbols = {}
@@ -82,8 +89,8 @@ class Mag7LeapsStrategy(QCAlgorithm):
         # LEAPS positions: {ticker: {symbol, entry_px, qty, first_hit}}
         self.leaps_positions = {}
 
-        # DD put state
-        self._reset_dd_put_state()
+        # Crash recovery call state
+        self._reset_crash_call_state()
 
         self.core_allocated  = False
         self.cooldown_until  = self.StartDate
@@ -104,6 +111,14 @@ class Mag7LeapsStrategy(QCAlgorithm):
             .IncludeWeeklys()
             .Strikes(-80, 80)
             .Expiration(60, 400)
+        )
+
+    def _spy_option_filter(self, universe):
+        return (
+            universe
+            .IncludeWeeklys()
+            .Strikes(-50, 10)        # ATM to slightly OTM calls (SPY is large-cap)
+            .Expiration(200, 400)    # 300 DTE ± 100 days
         )
 
     def OnData(self, data: Slice):
@@ -131,11 +146,11 @@ class Mag7LeapsStrategy(QCAlgorithm):
             if stock_price > 0:
                 self._check_leaps_exit(ticker, stock_price, vix_level)
 
-        # DD put on SPY drawdown
-        if self.dd_in_trade:
-            self._check_dd_put_exits(spy_price, vix_level)
-        elif self._dd_put_triggered(spy_price):
-            self._try_enter_dd_put(data, spy_price, vix_level)
+        # Crash recovery call: SPY LEAPS call when SPY down 25% from 52wk high
+        if self.crash_call_in_trade:
+            self._check_crash_call_exit(spy_price)
+        elif self._crash_call_triggered(spy_price):
+            self._try_enter_crash_call(data, spy_price, vix_level)
 
     # ── Core rebalance ─────────────────────────────────────────────────────────
 
@@ -298,30 +313,112 @@ class Mag7LeapsStrategy(QCAlgorithm):
         del self.leaps_positions[ticker]
         self.cooldown_until = self.Time + timedelta(days=self.COOLDOWN_DAYS)
 
-    # ── DD Put (SPY-based) ─────────────────────────────────────────────────────
+    # ── Crash Recovery Call (SPY -25% from 52wk high) ─────────────────────────
 
-    def _dd_put_triggered(self, spy_price: float) -> bool:
+    def _crash_call_triggered(self, spy_price: float) -> bool:
+        """True when SPY is down >= 25% from its 52-week high."""
         if len(self.spy_52wk) < 30:
             return False
         peak = max(self.spy_52wk)
-        return peak > 0 and (spy_price - peak) / peak <= -self.DD_PUT_THRESHOLD
+        return peak > 0 and (spy_price - peak) / peak <= -self.CRASH_CALL_THRESHOLD
 
-    def _try_enter_dd_put(self, data: Slice, spy_price: float, vix_level: float):
-        # Use SPY options for the protective put
-        chain = data.OptionChains.get(self.mag7_option_symbols.get("AAPL"))  # fallback
-        # Try to find SPY option chain — use first available Mag7 chain as proxy isn't ideal
-        # Instead, we use SPY equity put via AddOption("SPY") — but we didn't add it
-        # So we skip if no chain available
-        # Better: use QQQ or just log and skip
-        self.Log(f"DD PUT TRIGGER | {self.Time.date()} | SPY={spy_price:.2f} — no SPY option chain, skipping put")
+    def _try_enter_crash_call(self, data: Slice, spy_price: float, vix_level: float):
+        """Sell 15% SPY core, use proceeds to buy 300 DTE SPY LEAPS call."""
+        chain = data.OptionChains.get(self.spy_opt)
+        if chain is None:
+            return
 
-    def _check_dd_put_exits(self, spy_price: float, vix_level: float):
-        pass
+        contract = self._select_spy_call(chain, spy_price, vix_level)
+        if contract is None:
+            return
 
-    def _reset_dd_put_state(self):
-        self.dd_in_trade     = False
-        self.dd_put_symbol   = None
-        self.dd_put_entry_px = 0.0
+        mid = self._mid(contract)
+        if mid <= 0:
+            return
+
+        # Trim SPY: reduce from 75% to 60% (sell 15% of portfolio)
+        total  = float(self.Portfolio.TotalPortfolioValue)
+        trim   = total * self.CRASH_CALL_SPY_TRIM
+        spy_target_weight = self.CORE_SPY_WEIGHT - self.CRASH_CALL_SPY_TRIM
+        self.SetHoldings(self.spy, spy_target_weight)
+
+        # Buy SPY LEAPS call with the freed 15%
+        budget = total * self.CRASH_CALL_SPY_TRIM
+        n = int(budget / (mid * 100))
+        if n < 1:
+            self.Log(f"CRASH CALL | {self.Time.date()} | Not enough budget (need ${mid*100:.0f}, have ${budget:.0f})")
+            return
+
+        self.MarketOrder(contract.Symbol, n)
+
+        dd = (spy_price - max(self.spy_52wk)) / max(self.spy_52wk)
+        dte = (contract.Expiry.date() - self.Time.date()).days
+        delta = self._get_delta(contract, spy_price, vix_level)
+        self.crash_call_symbol   = contract.Symbol
+        self.crash_call_entry_px = mid
+        self.crash_call_qty      = n
+        self.crash_call_in_trade = True
+
+        self.Log(f"CRASH CALL ENTRY | {self.Time.date()} | SPY={spy_price:.2f} DD={dd:.1%} "
+                 f"Strike={contract.Strike:.2f} DTE={dte} Delta={delta:.2f} Mid=${mid:.2f} Qty={n} "
+                 f"Budget=${budget:.0f} SPY trimmed to {spy_target_weight:.0%}")
+
+    def _check_crash_call_exit(self, spy_price: float):
+        """Exit the crash recovery call at +100% profit or when SPY recovers."""
+        sym = self.crash_call_symbol
+        if sym not in self.Securities:
+            self._exit_crash_call("missing"); return
+
+        sec = self.Securities[sym]
+        mid = self._mid_from_security(sec)
+        if mid <= 0:
+            mid = self._bs_call(spy_price, 0.20, float(sym.ID.StrikePrice),
+                                max((sym.ID.Date.date() - self.Time.date()).days, 0))
+
+        entry_px = self.crash_call_entry_px
+
+        # Profit target: +100%
+        if entry_px > 0 and mid >= entry_px * (1 + self.CRASH_CALL_PROFIT_TGT):
+            self._exit_crash_call("profit_100"); return
+
+        # Drawdown recovered above threshold — market healed, exit
+        if len(self.spy_52wk) >= 30:
+            peak = max(self.spy_52wk)
+            dd   = (spy_price - peak) / peak if peak > 0 else 0
+            if dd > -self.CRASH_CALL_RECOVER_DD:
+                self._exit_crash_call("spy_recovered"); return
+
+        # Expiry
+        if (sym.ID.Date.date() - self.Time.date()).days <= 1:
+            self._exit_crash_call("expiry")
+
+    def _exit_crash_call(self, reason: str):
+        sym = self.crash_call_symbol
+        if sym and sym in self.Portfolio:
+            qty = self.Portfolio[sym].Quantity
+            if qty > 0:
+                self.MarketOrder(sym, -qty)
+
+        # Restore SPY back to full 75% core weight
+        self.SetHoldings(self.spy, self.CORE_SPY_WEIGHT)
+        self.Log(f"CRASH CALL EXIT [{reason}] | {self.Time.date()} | SPY core restored to {self.CORE_SPY_WEIGHT:.0%}")
+        self._reset_crash_call_state()
+
+    def _reset_crash_call_state(self):
+        self.crash_call_in_trade = False
+        self.crash_call_symbol   = None
+        self.crash_call_entry_px = 0.0
+        self.crash_call_qty      = 0
+
+    def _select_spy_call(self, chain, spy_price: float, vix_level: float):
+        """Select the SPY call nearest to 300 DTE and 0.40 delta."""
+        target_exp = self.Time.date() + timedelta(days=self.CRASH_CALL_DTE)
+        calls = [c for c in chain if c.Right == OptionRight.Call and c.AskPrice > 0 and c.BidPrice > 0]
+        if not calls:
+            return None
+        near = [c for c in calls if abs((c.Expiry.date() - target_exp).days) <= 60]
+        pool = near if near else calls
+        return min(pool, key=lambda c: abs(self._get_delta(c, spy_price, vix_level) - self.CRASH_CALL_DELTA_TGT))
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

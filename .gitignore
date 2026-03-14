@@ -13,10 +13,14 @@ data/
 *.csv
 
 # Secrets / config with credentials
-config/config.yaml
-config/*.yaml
+**/config/config.yaml
+**/config/*.yaml
 *.env
 .env
+substack-monitor/config.json
+substack-monitor/cookies.json
+substack-monitor/seen_posts.json
+substack-monitor/discord_sent.json
 
 # Claude internal
 .claude/

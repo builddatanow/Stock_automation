@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backtests — Trading Dashboard</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ── Base ── */
+body {
+  background: #eef2f7;
+  color: #1e293b;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 13.5px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ── Top Navbar ── */
+.top-nav {
+  background: #1e293b;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 52px;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  box-shadow: 0 2px 8px rgba(0,0,0,.18);
+}
+.brand {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f1f5f9;
+  letter-spacing: -0.3px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.brand:hover { color: #f1f5f9; text-decoration: none; }
+.brand i { color: #22c55e; margin-right: 6px; }
+.nav-link-pill {
+  font-size: 13px;
+  font-weight: 500;
+  color: #94a3b8;
+  padding: 5px 12px;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: all .15s;
+}
+.nav-link-pill:hover { color: #e2e8f0; background: rgba(255,255,255,.08); }
+.nav-link-pill.active { color: #f1f5f9; background: rgba(255,255,255,.12); }
+
+/* ── Cards ── */
+.card {
+  background: #fff;
+  border: 1px solid #dde3ee;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.05);
+  overflow: hidden;
+}
+.card-header {
+  background: #f8fafc;
+  border-bottom: 1px solid #e8edf4;
+  padding: 11px 16px;
+  font-weight: 600;
+  font-size: 13px;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.card-body { padding: 16px; }
+
+/* ── Tables ── */
+.table { color: #1e293b; margin: 0; }
+.table thead tr { background: #f8fafc; }
+.table th {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: #64748b;
+  border-color: #e8edf4;
+  padding: 9px 14px;
+  white-space: nowrap;
+}
+.table td {
+  border-color: #eef2f7;
+  padding: 9px 14px;
+  vertical-align: middle;
+  color: #1e293b;
+}
+.table tbody tr:hover > td { background: #f8fafc; }
+
+/* ── P&L colours ── */
+.pnl-pos { color: #059669 !important; font-weight: 600; }
+.pnl-neg { color: #dc2626 !important; font-weight: 600; }
+.pnl-zero { color: #9ca3af; }
+
+/* ── Stat blocks ── */
+.stat-val { font-size: 1.55rem; font-weight: 700; line-height: 1.1; color: #111827; }
+.stat-label { font-size: 10.5px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.8px; margin-top: 3px; }
+.stat-box { padding: 14px 16px; border-right: 1px solid #eef2f7; }
+.stat-box:last-child { border-right: none; }
+
+/* ── Section label ── */
+.section-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: #94a3b8;
+  margin-bottom: 9px;
+  padding-left: 1px;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+
+/* ── Backtest list ── */
+.bt-list {
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+.bt-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.3px;
+  color: #94a3b8;
+  padding: 10px 14px 5px;
+  border-top: 1px solid #f1f5f9;
+  margin-top: 4px;
+}
+.bt-group-label:first-child { border-top: none; margin-top: 0; }
+.bt-item {
+  padding: 11px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid #f1f5f9;
+  transition: background .12s;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.bt-item:hover { background: #f8fafc; }
+.bt-item.active {
+  background: #eff6ff;
+  border-left: 3px solid #2563eb;
+  padding-left: 11px;
+}
+.bt-item-main { flex: 1; min-width: 0; }
+.bt-item-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bt-item-meta {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 2px;
+}
+.cagr-badge {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.cagr-pos { background: #ecfdf5; color: #059669; }
+.cagr-neg { background: #fef2f2; color: #dc2626; }
+
+/* ── Strategy badge ── */
+.strat-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.strat-spx  { background: #ede9fe; color: #7c3aed; }
+.strat-qqq  { background: #fff7ed; color: #c2410c; }
+.strat-mag7 { background: #ecfdf5; color: #065f46; }
+
+/* ── Detail panel ── */
+.detail-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 400px;
+  color: #94a3b8;
+  gap: 10px;
+}
+.detail-placeholder i { font-size: 2.5rem; }
+.inline-stats {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.inline-stat-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: #94a3b8;
+  margin-bottom: 1px;
+}
+.inline-stat-val {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+}
+
+/* ── Run button ── */
+.btn-run {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #fff;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 0 0 3px rgba(34,197,94,.25), 0 2px 8px rgba(22,163,74,.35);
+  letter-spacing: 0.2px;
+}
+.btn-run:hover {
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  box-shadow: 0 0 0 4px rgba(34,197,94,.35), 0 4px 14px rgba(22,163,74,.5);
+  transform: translateY(-1px);
+}
+.btn-run:active { transform: translateY(0); }
+
+/* ── Progress ── */
+.progress-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  font-size: 12.5px;
+  color: #94a3b8;
+}
+.progress-step.done { color: #059669; }
+.progress-step.active { color: #2563eb; font-weight: 600; }
+.progress-step.error { color: #dc2626; }
+.step-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #dde3ee;
+  flex-shrink: 0;
+}
+.progress-step.done .step-dot { background: #059669; }
+.progress-step.active .step-dot { background: #2563eb; animation: pulse 1.5s infinite; }
+.progress-step.error .step-dot { background: #dc2626; }
+
+/* ── Slider ── */
+input[type=range] {
+  accent-color: #2563eb;
+}
+
+/* ── Delete button ── */
+.btn-delete {
+  background: none;
+  border: 1px solid #fca5a5;
+  color: #dc2626;
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.btn-delete:hover { background: #fef2f2; }
+
+/* ── QC link ── */
+.qc-link {
+  font-size: 11.5px;
+  color: #2563eb;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.qc-link:hover { text-decoration: underline; }
+
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+#clock { font-size: 12px; color: #64748b; font-family: 'Consolas', monospace; margin-left: auto; }
+</style>
+</head>
+<body>
+
+<!-- ── Top Navbar ── -->
+<div class="top-nav">
+  <a href="/" class="brand"><i class="bi bi-activity"></i>Trading Dashboard</a>
+  <a href="/" class="nav-link-pill"><i class="bi bi-speedometer2 me-1"></i>Dashboard</a>
+  <a href="/backtests" class="nav-link-pill active"><i class="bi bi-bar-chart-steps me-1"></i>Backtests</a>
+  <div id="clock"></div>
+  <a href="/logout" style="margin-left:0; font-size:12px; color:#64748b; text-decoration:none; display:flex; align-items:center; gap:5px; padding:5px 10px; border-radius:6px; border:1px solid #334155; transition:all .15s;"
+     onmouseover="this.style.color='#f1f5f9';this.style.borderColor='#475569';"
+     onmouseout="this.style.color='#64748b';this.style.borderColor='#334155';">
+    <i class="bi bi-box-arrow-right"></i> Logout
+  </a>
+</div>
+
+<div class="container-fluid px-4 py-3" style="max-width:1600px; margin:0 auto;">
+
+  <div class="row g-3">
+
+    <!-- ── LEFT: Backtest List ── -->
+    <div class="col-lg-4">
+      <div class="card h-100" style="overflow: visible;">
+        <div class="card-header">
+          <i class="bi bi-bar-chart-steps" style="color:#7c3aed;"></i>
+          All Backtests
+          <span id="bt-count-badge" class="badge ms-1" style="background:#e0e7ff; color:#4338ca; font-size:10px; font-weight:700; border-radius:20px; padding:2px 8px;">0</span>
+          <button class="btn-run ms-auto" onclick="openRunModal()">
+            <i class="bi bi-play-fill"></i> Run New
+          </button>
+        </div>
+        <div class="bt-list" id="bt-list">
+          <div style="padding:30px; text-align:center; color:#94a3b8;">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── RIGHT: Detail Panel ── -->
+    <div class="col-lg-8">
+      <div class="card h-100" id="detail-card">
+        <div class="card-header" id="detail-header" style="flex-wrap:wrap; gap:8px;">
+          <i class="bi bi-info-circle" style="color:#94a3b8;"></i>
+          <span id="detail-title">Select a backtest</span>
+        </div>
+        <div class="card-body" id="detail-body">
+          <div class="detail-placeholder">
+            <i class="bi bi-bar-chart-line"></i>
+            <div style="font-size:14px; font-weight:600;">Select a backtest to view results</div>
+            <div style="font-size:12px;">Click any item in the list on the left</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ── Run New Backtest Modal ── -->
+<div class="modal fade" id="runModal" tabindex="-1" aria-labelledby="runModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:500px;">
+    <div class="modal-content" style="border-radius:12px; border:1px solid #dde3ee; box-shadow:0 8px 32px rgba(0,0,0,.12);">
+      <div class="modal-header" style="background:#f8fafc; border-bottom:1px solid #e8edf4; border-radius:12px 12px 0 0; padding:14px 20px;">
+        <h5 class="modal-title" id="runModalLabel" style="font-size:14px; font-weight:700; color:#1e293b;">
+          <i class="bi bi-play-circle me-2" style="color:#059669;"></i>Run New Backtest
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" style="padding:20px 24px;">
+
+        <!-- Form (shown before run) -->
+        <div id="run-form">
+          <div class="mb-3">
+            <label class="form-label" style="font-size:12px; font-weight:600; color:#374151;">Strategy</label>
+            <select class="form-select form-select-sm" id="run-strategy">
+              <option value="spx">SPX LEAPS</option>
+              <option value="qqq">QQQ LEAPS</option>
+              <option value="mag7">Mag7 LEAPS</option>
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label d-flex justify-content-between" style="font-size:12px; font-weight:600; color:#374151;">
+              Risk per Trade <span id="risk-display" style="color:#2563eb; font-weight:700;">10%</span>
+            </label>
+            <input type="range" class="form-range" id="run-risk" min="5" max="30" value="10"
+                   oninput="document.getElementById('risk-display').textContent = this.value + '%'; document.getElementById('run-risk-num').value = this.value;">
+            <input type="number" class="form-control form-control-sm mt-1" id="run-risk-num" min="5" max="30" value="10"
+                   oninput="document.getElementById('run-risk').value = this.value; document.getElementById('risk-display').textContent = this.value + '%';"
+                   style="width:100px;">
+          </div>
+
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label" style="font-size:12px; font-weight:600; color:#374151;">DTE</label>
+              <input type="number" class="form-control form-control-sm" id="run-dte" value="300" min="30" max="500">
+            </div>
+            <div class="col-6">
+              <label class="form-label" style="font-size:12px; font-weight:600; color:#374151;">Start Year</label>
+              <input type="number" class="form-control form-control-sm" id="run-start-year" value="2010" min="1990" max="2025">
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" style="font-size:12px; font-weight:600; color:#374151;">Custom Name <span style="color:#94a3b8; font-weight:400;">(optional)</span></label>
+            <input type="text" class="form-control form-control-sm" id="run-name" placeholder="Auto-generated if blank">
+          </div>
+        </div>
+
+        <!-- Progress (shown after run) -->
+        <div id="run-progress" style="display:none;">
+          <div style="font-size:13px; font-weight:600; color:#1e293b; margin-bottom:14px;" id="run-progress-name"></div>
+          <div class="progress-step" id="step-starting"><span class="step-dot"></span>Initialising...</div>
+          <div class="progress-step" id="step-uploading"><span class="step-dot"></span>Uploading strategy to QuantConnect</div>
+          <div class="progress-step" id="step-compiling"><span class="step-dot"></span>Compiling</div>
+          <div class="progress-step" id="step-running"><span class="step-dot"></span>Running backtest (this takes 30–60 min)</div>
+          <div class="progress-step" id="step-completed" style="display:none;"><span class="step-dot"></span>Completed!</div>
+          <div class="progress-step error" id="step-error" style="display:none;"><span class="step-dot"></span><span id="step-error-msg">Error</span></div>
+          <div id="run-qc-link" style="margin-top:12px; display:none;"></div>
+        </div>
+
+      </div>
+      <div class="modal-footer" style="background:#f8fafc; border-top:1px solid #e8edf4; border-radius:0 0 12px 12px; padding:12px 20px; gap:8px;">
+        <button type="button" class="btn btn-sm" data-bs-dismiss="modal" style="color:#64748b; border-color:#dde3ee;">Cancel</button>
+        <button type="button" class="btn-run" id="run-submit-btn" onclick="submitRun()">
+          <i class="bi bi-play-fill"></i> Run Backtest
+        </button>
+        <button type="button" class="btn btn-sm btn-success" id="run-done-btn" style="display:none;" data-bs-dismiss="modal" onclick="loadBacktests()">
+          <i class="bi bi-check-lg me-1"></i>Done
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ── Clock ──
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toUTCString().replace(' GMT', ' UTC');
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── State ──
+let allBacktests = [];
+let selectedId = null;
+let yearlyChart = null;
+let runPollInterval = null;
+
+// ── Strategy config ──
+const STRAT_LABELS = { spx: 'SPX', qqq: 'QQQ', mag7: 'MAG7' };
+const STRAT_CLASSES = { spx: 'strat-spx', qqq: 'strat-qqq', mag7: 'strat-mag7' };
+const STRAT_ICONS = { spx: 'bi-graph-up-arrow', qqq: 'bi-bar-chart', mag7: 'bi-stars' };
+const STRAT_COLORS = { spx: '#7c3aed', qqq: '#c2410c', mag7: '#059669' };
+
+// ── Group order ──
+const GROUP_ORDER = ['spx', 'qqq', 'mag7'];
+const GROUP_LABELS = { spx: 'SPX LEAPS', qqq: 'QQQ LEAPS', mag7: 'Mag7 LEAPS' };
+
+// ── Helpers ──
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtEquity(v) {
+  if (v == null) return '—';
+  v = Number(v);
+  if (v >= 1e6) return '$' + (v / 1e6).toFixed(2) + 'M';
+  if (v >= 1e3) return '$' + (v / 1e3).toFixed(0) + 'K';
+  return '$' + v.toLocaleString();
+}
+
+function cagrColor(cagr) {
+  if (!cagr || cagr === '—') return '';
+  const num = parseFloat(cagr);
+  if (isNaN(num)) return '';
+  return num >= 0 ? 'pnl-pos' : 'pnl-neg';
+}
+
+function cagrBadgeClass(cagr) {
+  if (!cagr || cagr === '—') return '';
+  const num = parseFloat(cagr);
+  if (isNaN(num)) return '';
+  return num >= 0 ? 'cagr-pos' : 'cagr-neg';
+}
+
+// ── Load backtests ──
+function loadBacktests() {
+  fetch('/api/backtests')
+    .then(r => r.json())
+    .then(data => {
+      allBacktests = data;
+      renderList();
+      document.getElementById('bt-count-badge').textContent = data.length;
+      // Auto-select first if none selected
+      if (!selectedId && data.length > 0) {
+        selectBacktest(data[0].id);
+      } else if (selectedId) {
+        const current = data.find(b => b.id === selectedId);
+        if (current) renderDetail(current);
+      }
+    })
+    .catch(() => {
+      document.getElementById('bt-list').innerHTML =
+        '<div style="padding:20px; text-align:center; color:#dc2626;">Failed to load</div>';
+    });
+}
+
+// ── Render left list ──
+function renderList() {
+  const container = document.getElementById('bt-list');
+  if (allBacktests.length === 0) {
+    container.innerHTML = '<div style="padding:30px; text-align:center; color:#94a3b8;">No backtests yet.<br>Click "Run New" to start one.</div>';
+    return;
+  }
+
+  // Group by strategy
+  const groups = {};
+  for (const bt of allBacktests) {
+    const s = bt.strategy || 'spx';
+    if (!groups[s]) groups[s] = [];
+    groups[s].push(bt);
+  }
+
+  let html = '';
+  for (const strat of GROUP_ORDER) {
+    if (!groups[strat] || groups[strat].length === 0) continue;
+    html += `<div class="bt-group-label">${escHtml(GROUP_LABELS[strat] || strat)}</div>`;
+    for (const bt of groups[strat]) {
+      const r = bt.results || {};
+      const cagr = r.cagr || '—';
+      const dd   = r.drawdown || '—';
+      const risk = bt.params && bt.params.risk != null ? bt.params.risk + '% risk' : '';
+      const isActive = bt.id === selectedId;
+      const badgeCls = cagrBadgeClass(cagr);
+
+      html += `
+        <div class="bt-item ${isActive ? 'active' : ''}" id="btitem-${escHtml(bt.id)}" onclick="selectBacktest('${escHtml(bt.id)}')">
+          <div class="bt-item-main">
+            <div class="bt-item-name">${escHtml(bt.name)}</div>
+            <div class="bt-item-meta">${risk ? escHtml(risk) + ' &middot; ' : ''}DD: ${escHtml(dd)} &middot; ${escHtml(bt.run_date || '')}</div>
+          </div>
+          <div>
+            <div class="cagr-badge ${badgeCls}">${escHtml(cagr)}</div>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  // Any strategy not in GROUP_ORDER
+  for (const strat of Object.keys(groups)) {
+    if (GROUP_ORDER.includes(strat)) continue;
+    html += `<div class="bt-group-label">${escHtml(strat.toUpperCase())}</div>`;
+    for (const bt of groups[strat]) {
+      const r = bt.results || {};
+      const cagr = r.cagr || '—';
+      const dd   = r.drawdown || '—';
+      const risk = bt.params && bt.params.risk != null ? bt.params.risk + '% risk' : '';
+      const isActive = bt.id === selectedId;
+      const badgeCls = cagrBadgeClass(cagr);
+      html += `
+        <div class="bt-item ${isActive ? 'active' : ''}" id="btitem-${escHtml(bt.id)}" onclick="selectBacktest('${escHtml(bt.id)}')">
+          <div class="bt-item-main">
+            <div class="bt-item-name">${escHtml(bt.name)}</div>
+            <div class="bt-item-meta">${risk ? escHtml(risk) + ' &middot; ' : ''}DD: ${escHtml(dd)} &middot; ${escHtml(bt.run_date || '')}</div>
+          </div>
+          <div><div class="cagr-badge ${badgeCls}">${escHtml(cagr)}</div></div>
+        </div>
+      `;
+    }
+  }
+
+  container.innerHTML = html;
+}
+
+// ── Select backtest ──
+function selectBacktest(id) {
+  selectedId = id;
+  // Update active state in list
+  document.querySelectorAll('.bt-item').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById('btitem-' + id);
+  if (el) el.classList.add('active');
+  // Find and render
+  const bt = allBacktests.find(b => b.id === id);
+  if (bt) renderDetail(bt);
+}
+
+// ── Render detail ──
+function renderDetail(bt) {
+  const r = bt.results || {};
+  const strat = bt.strategy || 'spx';
+  const stratLabel = STRAT_LABELS[strat] || strat.toUpperCase();
+  const stratCls = STRAT_CLASSES[strat] || 'strat-spx';
+  const stratIcon = STRAT_ICONS[strat] || 'bi-bar-chart-steps';
+  const stratColor = STRAT_COLORS[strat] || '#7c3aed';
+
+  // Header
+  document.getElementById('detail-header').innerHTML = `
+    <i class="bi ${stratIcon}" style="color:${stratColor};"></i>
+    <span id="detail-title" style="font-size:14px;">${escHtml(bt.name)}</span>
+    <span class="strat-badge ${stratCls} ms-1">${escHtml(stratLabel)}</span>
+    <button class="btn-delete ms-auto" onclick="deleteBacktest('${escHtml(bt.id)}', '${escHtml(bt.name).replace(/'/g, "\\'")}')">
+      <i class="bi bi-trash me-1"></i>Delete
+    </button>
+  `;
+
+  const cagr = r.cagr || '—';
+  const dd   = r.drawdown || '—';
+  const sharpe = r.sharpe || '—';
+  const equity = r.end_equity;
+  const winRate = r.win_rate || '—';
+  const trades = r.trades != null ? r.trades : '—';
+  const runDate = bt.run_date || '—';
+  const qcId = bt.qc_id;
+  const yearly = r.yearly || {};
+
+  const cagrCls = cagrColor(cagr);
+
+  let qcHtml = '';
+  if (qcId) {
+    const qcUrl = `https://www.quantconnect.com/terminal/${bt.params && bt.params.start_year ? '' : ''}#open=${qcId}`;
+    qcHtml = `
+      <div style="margin-top:14px; padding:10px 14px; background:#f8fafc; border-radius:8px; border:1px solid #e8edf4;">
+        <span style="font-size:11px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.7px;">QuantConnect Backtest ID</span><br>
+        <a href="https://www.quantconnect.com/reports/${qcId}" target="_blank" class="qc-link" style="margin-top:3px; display:inline-block;">
+          <i class="bi bi-box-arrow-up-right"></i> ${escHtml(qcId)}
+        </a>
+      </div>
+    `;
+  }
+
+  // Yearly chart
+  const yearKeys = Object.keys(yearly).sort();
+  const yearVals = yearKeys.map(y => yearly[y]);
+  const hasYearly = yearKeys.length > 0;
+
+  const capital = bt.params && bt.params.capital != null ? bt.params.capital : null;
+  const riskPct = bt.params && bt.params.risk != null ? bt.params.risk : null;
+
+  let paramsHtml = '';
+  if (bt.params) {
+    const p = bt.params;
+    const parts = [];
+    if (p.dte != null) parts.push(`DTE: ${p.dte}`);
+    if (p.start_year != null) parts.push(`From: ${p.start_year}`);
+    if (parts.length) paramsHtml = `<div style="margin-top:6px;">${parts.map(x => `<span style="font-size:11px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:4px; padding:1px 7px; margin-right:5px; color:#475569;">${escHtml(x)}</span>`).join('')}</div>`;
+  }
+
+  document.getElementById('detail-body').innerHTML = `
+    <p style="color:#64748b; font-size:12.5px; margin-bottom:6px;">${escHtml(bt.description || '')}</p>
+    ${paramsHtml}
+
+    <!-- 4 main stat boxes -->
+    <div class="row g-0 mt-3 mb-3" style="border:1px solid #eef2f7; border-radius:10px; overflow:hidden;">
+      <div class="col-6 col-md-3 stat-box">
+        <div class="stat-val ${cagrCls}">${escHtml(cagr)}</div>
+        <div class="stat-label">CAGR</div>
+      </div>
+      <div class="col-6 col-md-3 stat-box">
+        <div class="stat-val pnl-neg">${escHtml(dd)}</div>
+        <div class="stat-label">Max Drawdown</div>
+      </div>
+      <div class="col-6 col-md-3 stat-box">
+        <div class="stat-val">${escHtml(String(sharpe))}</div>
+        <div class="stat-label">Sharpe Ratio</div>
+      </div>
+      <div class="col-6 col-md-3 stat-box">
+        <div class="stat-val">${escHtml(fmtEquity(equity))}</div>
+        <div class="stat-label">End Equity</div>
+      </div>
+    </div>
+
+    <!-- inline stats row -->
+    <div class="inline-stats mb-3">
+      <div>
+        <div class="inline-stat-label">Win Rate</div>
+        <div class="inline-stat-val">${escHtml(String(winRate))}</div>
+      </div>
+      <div>
+        <div class="inline-stat-label">Total Trades</div>
+        <div class="inline-stat-val">${escHtml(String(trades))}</div>
+      </div>
+      ${riskPct != null ? `
+      <div>
+        <div class="inline-stat-label">Risk / Trade</div>
+        <div class="inline-stat-val" style="color:#d97706;">${escHtml(String(riskPct))}%</div>
+      </div>` : ''}
+      ${capital != null ? `
+      <div>
+        <div class="inline-stat-label">Initial Capital</div>
+        <div class="inline-stat-val">${escHtml(fmtEquity(capital))}</div>
+      </div>` : ''}
+      <div>
+        <div class="inline-stat-label">Run Date</div>
+        <div class="inline-stat-val">${escHtml(runDate)}</div>
+      </div>
+    </div>
+
+    <!-- Yearly returns chart -->
+    ${hasYearly ? `
+    <div style="margin-top:4px;">
+      <div class="section-label">Yearly Returns</div>
+      <div style="position:relative; height:200px;">
+        <canvas id="yearlyChart"></canvas>
+      </div>
+    </div>
+    ` : `
+    <div style="margin-top:12px; padding:20px; background:#f8fafc; border-radius:8px; border:1px solid #e8edf4; text-align:center; color:#94a3b8; font-size:12px;">
+      <i class="bi bi-bar-chart me-2"></i>No yearly breakdown available for this backtest
+    </div>
+    `}
+
+    ${qcHtml}
+  `;
+
+  // Render chart if data available
+  if (hasYearly) {
+    renderYearlyChart(yearKeys, yearVals);
+  }
+}
+
+// ── Yearly chart ──
+function renderYearlyChart(labels, values) {
+  if (yearlyChart) { yearlyChart.destroy(); yearlyChart = null; }
+  const canvas = document.getElementById('yearlyChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  const barColors = values.map(v => v >= 0 ? 'rgba(5,150,105,0.80)' : 'rgba(220,38,38,0.80)');
+  const barBorder = values.map(v => v >= 0 ? '#059669' : '#dc2626');
+
+  yearlyChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Annual Return %',
+        data: values,
+        backgroundColor: barColors,
+        borderColor: barBorder,
+        borderWidth: 1,
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 350 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#0f172a',
+          borderColor: '#1e293b',
+          borderWidth: 1,
+          titleColor: '#94a3b8',
+          titleFont: { size: 11 },
+          bodyColor: '#f1f5f9',
+          bodyFont: { size: 12, weight: '600' },
+          padding: 10,
+          cornerRadius: 7,
+          callbacks: {
+            label: c => {
+              const v = c.parsed.y;
+              return `  ${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#94a3b8', font: { size: 10.5 }, maxRotation: 45 },
+          grid: { color: '#f8fafc' },
+          border: { color: '#e2e8f0' },
+        },
+        y: {
+          ticks: {
+            color: '#94a3b8',
+            font: { size: 10.5 },
+            padding: 6,
+            callback: v => (v >= 0 ? '+' : '') + v.toFixed(0) + '%'
+          },
+          grid: { color: '#f1f5f9', lineWidth: 1 },
+          border: { color: 'transparent' },
+        }
+      }
+    }
+  });
+}
+
+// ── Delete backtest ──
+function deleteBacktest(id, name) {
+  if (!confirm(`Delete "${name}"?\n\nThis cannot be undone.`)) return;
+  fetch(`/api/backtests/delete/${encodeURIComponent(id)}`, { method: 'POST' })
+    .then(r => r.json())
+    .then(() => {
+      if (selectedId === id) {
+        selectedId = null;
+        document.getElementById('detail-header').innerHTML =
+          '<i class="bi bi-info-circle" style="color:#94a3b8;"></i><span>Select a backtest</span>';
+        document.getElementById('detail-body').innerHTML = `
+          <div class="detail-placeholder">
+            <i class="bi bi-bar-chart-line"></i>
+            <div style="font-size:14px; font-weight:600;">Select a backtest to view results</div>
+            <div style="font-size:12px;">Click any item in the list on the left</div>
+          </div>`;
+      }
+      loadBacktests();
+    });
+}
+
+// ── Run modal ──
+function openRunModal() {
+  // Reset form
+  document.getElementById('run-form').style.display = '';
+  document.getElementById('run-progress').style.display = 'none';
+  document.getElementById('run-submit-btn').style.display = '';
+  document.getElementById('run-done-btn').style.display = 'none';
+  document.getElementById('run-name').value = '';
+  document.getElementById('run-strategy').value = 'spx';
+  document.getElementById('run-risk').value = '10';
+  document.getElementById('run-risk-num').value = '10';
+  document.getElementById('risk-display').textContent = '10%';
+  document.getElementById('run-dte').value = '300';
+  document.getElementById('run-start-year').value = '2010';
+  // Reset progress steps
+  ['starting','uploading','compiling','running'].forEach(s => {
+    const el = document.getElementById('step-' + s);
+    el.className = 'progress-step';
+    el.style.display = '';
+  });
+  document.getElementById('step-completed').style.display = 'none';
+  document.getElementById('step-error').style.display = 'none';
+  document.getElementById('run-qc-link').style.display = 'none';
+  if (runPollInterval) { clearInterval(runPollInterval); runPollInterval = null; }
+  new bootstrap.Modal(document.getElementById('runModal')).show();
+}
+
+function submitRun() {
+  const strategy   = document.getElementById('run-strategy').value;
+  const risk       = parseInt(document.getElementById('run-risk-num').value) || 10;
+  const dte        = parseInt(document.getElementById('run-dte').value) || 300;
+  const start_year = parseInt(document.getElementById('run-start-year').value) || 2010;
+  const name       = document.getElementById('run-name').value.trim() || null;
+
+  // Switch to progress view
+  document.getElementById('run-form').style.display = 'none';
+  document.getElementById('run-progress').style.display = '';
+  document.getElementById('run-submit-btn').style.display = 'none';
+  document.getElementById('run-progress-name').textContent = name ||
+    `${strategy.toUpperCase()} Risk${risk}% DTE${dte} ${start_year}`;
+
+  setStep('starting');
+
+  fetch('/api/backtests/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ strategy, risk, dte, start_year, name })
+  })
+    .then(r => r.json())
+    .then(data => {
+      const runId = data.run_id;
+      if (!runId) {
+        showStepError('Failed to start');
+        return;
+      }
+      // Poll status
+      runPollInterval = setInterval(() => pollStatus(runId), 10000);
+      pollStatus(runId);
+    })
+    .catch(err => showStepError(String(err)));
+}
+
+const STEP_ORDER = ['starting', 'uploading', 'compiling', 'running', 'completed'];
+
+function setStep(status) {
+  const idx = STEP_ORDER.indexOf(status);
+  STEP_ORDER.forEach((s, i) => {
+    const el = document.getElementById('step-' + s);
+    if (!el) return;
+    if (i < idx) el.className = 'progress-step done';
+    else if (i === idx) el.className = 'progress-step active';
+    else el.className = 'progress-step';
+  });
+}
+
+function showStepError(msg) {
+  if (runPollInterval) { clearInterval(runPollInterval); runPollInterval = null; }
+  STEP_ORDER.forEach(s => {
+    const el = document.getElementById('step-' + s);
+    if (el) el.className = 'progress-step';
+  });
+  const errEl = document.getElementById('step-error');
+  errEl.style.display = '';
+  document.getElementById('step-error-msg').textContent = 'Error: ' + msg;
+  document.getElementById('run-done-btn').style.display = '';
+}
+
+function pollStatus(runId) {
+  fetch('/api/backtests/status/' + runId)
+    .then(r => r.json())
+    .then(info => {
+      const s = info.status;
+      if (s === 'error') {
+        showStepError(info.error || 'Unknown error');
+        return;
+      }
+      if (s === 'completed') {
+        if (runPollInterval) { clearInterval(runPollInterval); runPollInterval = null; }
+        setStep('completed');
+        document.getElementById('step-completed').style.display = '';
+        document.getElementById('run-done-btn').style.display = '';
+        if (info.bt_id) {
+          const linkEl = document.getElementById('run-qc-link');
+          linkEl.style.display = '';
+          linkEl.innerHTML = `<a href="https://www.quantconnect.com/reports/${escHtml(info.bt_id)}" target="_blank" class="qc-link"><i class="bi bi-box-arrow-up-right"></i> View on QuantConnect</a>`;
+        }
+        loadBacktests();
+        return;
+      }
+      // Map status to step
+      const stepMap = {
+        starting:  'starting',
+        uploading: 'uploading',
+        compiling: 'compiling',
+        running:   'running',
+      };
+      const step = stepMap[s] || 'starting';
+      setStep(step);
+    })
+    .catch(() => {}); // silently ignore poll errors
+}
+
+// ── Init ──
+loadBacktests();
+</script>
+</body>
+</html>

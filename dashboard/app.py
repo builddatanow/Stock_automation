@@ -10,15 +10,34 @@ import csv
 import json
 import os
 import subprocess
+import threading
 import time
+import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 
 import psutil
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
 app = Flask(__name__)
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.secret_key = "tbd-dashboard-s3cr3t-2026"
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+DASHBOARD_USER     = "admin"
+DASHBOARD_PASSWORD = "trade2026"
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("logged_in"):
+            return redirect(url_for("login", next=request.path))
+        return f(*args, **kwargs)
+    return decorated
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -85,9 +104,16 @@ BOTS = {
     },
 }
 
+BACKTESTS_JSON = os.path.join(os.path.dirname(__file__), "backtests.json")
+QC_USER_ID     = "426855"
+QC_TOKEN       = "a197cd7a8911f9c32603f0f10601e78d4dbf223de66d161b9551551d28723910"
+QC_PROJECT_ID  = 28932760
+QC_STRATEGY_DIR = r"C:\Users\Administrator\Desktop\projects\spx-leaps-qc"
+
+_running_backtests: dict[str, dict] = {}  # id -> {status, progress, bt_id, ...}
+
 # Crash tracker: {bot_id: [(timestamp), ...]}
 _crash_log: dict[str, list[float]] = defaultdict(list)
-_auto_restart: dict[str, bool]     = {"eth_0dte": True, "eth_7dte": True, "btc_0dte": True}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -294,47 +320,55 @@ def read_log_tail(path: str, lines: int = 50) -> list[str]:
 
 
 def equity_curve(trades: list[dict]) -> list[dict]:
-    """Build cumulative P&L series for Chart.js."""
+    """Build daily end-of-day cumulative P&L series for Chart.js (one point per day)."""
     sorted_trades = sorted(trades, key=lambda t: t.get("exit_time", ""))
+    daily_pnl: dict[str, float] = {}
+    for t in sorted_trades:
+        day = t.get("exit_time", "")[:10]
+        if day:
+            daily_pnl[day] = daily_pnl.get(day, 0.0) + parse_pnl(t.get("pnl_usd", "0"))
     cumulative = 0.0
     points = []
-    for t in sorted_trades:
-        cumulative += parse_pnl(t.get("pnl_usd", "0"))
-        points.append({
-            "x": t.get("exit_time", "")[:10],
-            "y": round(cumulative, 2),
-        })
+    for day in sorted(daily_pnl):
+        cumulative += daily_pnl[day]
+        points.append({"x": day, "y": round(cumulative, 2)})
     return points
 
 # ---------------------------------------------------------------------------
-# Background auto-restart checker (called on each page load)
+# Routes — Auth
 # ---------------------------------------------------------------------------
 
-def check_auto_restarts():
-    now = time.time()
-    for bot_id, bot in BOTS.items():
-        if not _auto_restart.get(bot_id):
-            continue
-        if is_running(bot["script"]):
-            continue
-        # Crashed — count recent crashes (last 1 hour)
-        recent = [t for t in _crash_log[bot_id] if now - t < 3600]
-        if len(recent) >= 3:
-            continue  # circuit breaker: too many crashes, don't restart
-        _crash_log[bot_id] = recent + [now]
-        start_bot(bot_id)
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        if (request.form.get("username") == DASHBOARD_USER and
+                request.form.get("password") == DASHBOARD_PASSWORD):
+            session["logged_in"] = True
+            next_url = request.args.get("next") or url_for("index")
+            return redirect(next_url)
+        error = "Invalid username or password."
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
 
 # ---------------------------------------------------------------------------
 # Routes — Pages
 # ---------------------------------------------------------------------------
 
 @app.route("/")
+@login_required
 def index():
-    check_auto_restarts()
     return render_template("index.html")
 
 
 @app.route("/bot/<bot_id>/start", methods=["POST"])
+@login_required
 def bot_start(bot_id: str):
     if bot_id in BOTS:
         start_bot(bot_id)
@@ -342,6 +376,7 @@ def bot_start(bot_id: str):
 
 
 @app.route("/bot/<bot_id>/stop", methods=["POST"])
+@login_required
 def bot_stop(bot_id: str):
     if bot_id in BOTS:
         stop_bot(bot_id)
@@ -349,6 +384,7 @@ def bot_stop(bot_id: str):
 
 
 @app.route("/bot/<bot_id>/restart", methods=["POST"])
+@login_required
 def bot_restart(bot_id: str):
     if bot_id in BOTS:
         stop_bot(bot_id)
@@ -357,17 +393,13 @@ def bot_restart(bot_id: str):
     return redirect(url_for("index"))
 
 
-@app.route("/bot/<bot_id>/autorestart", methods=["POST"])
-def toggle_autorestart(bot_id: str):
-    if bot_id in BOTS:
-        _auto_restart[bot_id] = not _auto_restart.get(bot_id, True)
-    return redirect(url_for("index"))
 
 # ---------------------------------------------------------------------------
 # Routes — API (used by HTMX partials + Grafana)
 # ---------------------------------------------------------------------------
 
 @app.route("/api/status")
+@login_required
 def api_status():
     result = {}
     for bot_id, bot in BOTS.items():
@@ -375,16 +407,16 @@ def api_status():
         recent_crashes = [t for t in _crash_log[bot_id] if time.time() - t < 3600]
         circuit_open = len(recent_crashes) >= 3
         result[bot_id] = {
-            "name":          bot["name"],
-            "running":       running,
-            "auto_restart":  _auto_restart.get(bot_id, True),
-            "crash_count":   len(recent_crashes),
-            "circuit_open":  circuit_open,
+            "name":         bot["name"],
+            "running":      running,
+            "crash_count":  len(recent_crashes),
+            "circuit_open": circuit_open,
         }
     return jsonify(result)
 
 
 @app.route("/api/pnl")
+@login_required
 def api_pnl():
     result = {}
     grand_today = 0.0
@@ -403,6 +435,7 @@ def api_pnl():
 
 
 @app.route("/api/positions")
+@login_required
 def api_positions():
     positions = []
     for bot_id, bot in BOTS.items():
@@ -447,6 +480,7 @@ def _parse_legs(state: dict) -> list[dict]:
 
 
 @app.route("/api/trades")
+@login_required
 def api_trades():
     all_trades = []
     for bot_id, bot in BOTS.items():
@@ -459,6 +493,7 @@ def api_trades():
 
 
 @app.route("/api/logs/<bot_id>")
+@login_required
 def api_logs(bot_id: str):
     if bot_id not in BOTS:
         return jsonify([])
@@ -466,37 +501,67 @@ def api_logs(bot_id: str):
     return jsonify(lines)
 
 
+@app.route("/api/chart_daily")
+@login_required
+def api_chart_daily():
+    """Daily P&L bars + cumulative line per bot, for the combo chart."""
+    result = {}
+    bot_labels = {
+        "spx":     "SPX Live",
+        "eth_0dte": "ETH 0 DTE (Demo)",
+        "eth_7dte": "ETH 7 DTE (Demo)",
+        "btc_0dte": "BTC 0 DTE (Demo)",
+    }
+    for bot_id, bot in BOTS.items():
+        if bot_id == "spx":
+            trades = [t for t in read_spx_trades() if not t.get("is_demo")]
+        else:
+            trades = read_trades(bot["csv"])
+        daily: dict[str, float] = {}
+        for t in trades:
+            day = t.get("exit_time", "")[:10]
+            if day:
+                daily[day] = daily.get(day, 0.0) + parse_pnl(t.get("pnl_usd", "0"))
+        cumulative = 0.0
+        points = []
+        for day in sorted(daily):
+            cumulative += daily[day]
+            points.append({"x": day, "daily": round(daily[day], 2),
+                           "cumulative": round(cumulative, 2)})
+        result[bot_id] = {
+            "label":   bot_labels.get(bot_id, bot["name"]),
+            "points":  points,
+            "is_demo": bot_id != "spx",
+        }
+    return jsonify(result)
+
+
 @app.route("/api/chart")
+@login_required
 def api_chart():
-    """Equity curves per bot for Chart.js (includes SPX live + demo)."""
+    """Equity curves per bot for Chart.js (SPX live only; ETH/BTC shown as demo/dashed)."""
     datasets = []
     colors = {"eth_0dte": "#3b82f6", "eth_7dte": "#06b6d4", "btc_0dte": "#f59e0b"}
     for bot_id, bot in BOTS.items():
         if bot_id == "spx":
             spx = read_spx_trades()
             real = [t for t in spx if not t.get("is_demo")]
-            demo = [t for t in spx if t.get("is_demo")]
             if real:
                 datasets.append({
                     "label": "SPX Live", "data": equity_curve(real),
-                    "borderColor": "#10b981", "backgroundColor": "transparent", "tension": 0.3,
-                })
-            if demo:
-                datasets.append({
-                    "label": "SPX Demo", "data": equity_curve(demo),
-                    "borderColor": "#6b7280", "backgroundColor": "transparent", "tension": 0.3,
-                    "borderDash": [5, 5],
+                    "borderColor": "#10b981", "backgroundColor": "transparent", "tension": 0,
                 })
             continue
         trades = read_trades(bot["csv"])
         points = equity_curve(trades)
         if points:
             datasets.append({
-                "label":           bot["name"],
+                "label":           f"{bot['name']} (Demo)",
                 "data":            points,
                 "borderColor":     colors.get(bot_id, "#adb5bd"),
                 "backgroundColor": "transparent",
                 "tension":         0.3,
+                "borderDash":      [5, 5],
             })
     return jsonify(datasets)
 
@@ -506,6 +571,7 @@ def api_chart():
 # ---------------------------------------------------------------------------
 
 @app.route("/partials/status")
+@login_required
 def partial_status():
     cards = []
     for bot_id, bot in BOTS.items():
@@ -520,48 +586,42 @@ def partial_status():
         running = is_running(bot["script"])
         recent  = [t for t in _crash_log[bot_id] if time.time() - t < 3600]
         circuit = len(recent) >= 3
-        auto    = _auto_restart.get(bot_id, True)
         cards.append({
             "id": bot_id, "name": bot["name"], "color": bot["color"],
-            "running": running, "circuit": circuit, "auto": auto, "crashes": len(recent),
+            "running": running, "circuit": circuit, "crashes": len(recent),
             "capital": bot.get("capital", 0), "windows": bot.get("windows", []),
         })
     return render_template("partials/status.html", cards=cards)
 
 
 @app.route("/partials/pnl")
+@login_required
 def partial_pnl():
     data = {}
     grand_today = grand_total = grand_capital = 0.0
     for bot_id, bot in BOTS.items():
         capital = bot.get("capital", 0.0)
         if bot_id == "spx":
-            all_spx    = read_spx_trades()
+            all_spx     = read_spx_trades()
             real_trades = [t for t in all_spx if not t.get("is_demo")]
-            demo_trades = [t for t in all_spx if t.get("is_demo")]
             s_live = pnl_summary(real_trades)
-            s_demo = pnl_summary(demo_trades)
-            data["spx_live"] = {
+            data["spx"] = {
                 "name": "SPX 0 DTE", "capital": capital, "is_demo": False,
                 "current_capital": round(capital + s_live["total_pnl"], 2), **s_live,
-            }
-            data["spx_demo"] = {
-                "name": "SPX 0 DTE", "capital": capital, "is_demo": True,
-                "current_capital": round(capital + s_demo["total_pnl"], 2), **s_demo,
             }
             grand_today   += s_live["today_pnl"]
             grand_total   += s_live["total_pnl"]
             grand_capital += capital
             continue
-        trades = read_trades(bot["csv"])
-        s      = pnl_summary(trades)
+        # ETH and BTC run on testnet — mark as demo (excluded from portfolio totals)
+        trades   = read_trades(bot["csv"])
+        s        = pnl_summary(trades)
+        is_demo  = bot_id in ("eth_0dte", "eth_7dte", "btc_0dte")
         data[bot_id] = {
-            "name": bot["name"], "capital": capital, "is_demo": False,
+            "name": bot["name"], "capital": capital, "is_demo": is_demo,
             "current_capital": round(capital + s["total_pnl"], 2), **s,
         }
-        grand_today   += s["today_pnl"]
-        grand_total   += s["total_pnl"]
-        grand_capital += capital
+        # Only SPX live counts toward portfolio total
     return render_template("partials/pnl.html", data=data,
                            grand_today=round(grand_today, 2),
                            grand_total=round(grand_total, 2),
@@ -570,6 +630,7 @@ def partial_pnl():
 
 
 @app.route("/partials/positions")
+@login_required
 def partial_positions():
     rows = []
     for bot_id, bot in BOTS.items():
@@ -593,16 +654,16 @@ def partial_positions():
 
 
 @app.route("/partials/spx")
+@login_required
 def partial_spx():
     spx_trades  = read_spx_trades()
     live_trades = [t for t in spx_trades if not t.get("is_demo")]
-    demo_trades = [t for t in spx_trades if t.get("is_demo")]
     return render_template("partials/spx.html",
-                           live=pnl_summary(live_trades),
-                           demo=pnl_summary(demo_trades))
+                           live=pnl_summary(live_trades))
 
 
 @app.route("/partials/trades")
+@login_required
 def partial_trades():
     all_trades = []
     for bot_id, bot in BOTS.items():
@@ -616,6 +677,187 @@ def partial_trades():
                 all_trades.append(t)
     all_trades.sort(key=lambda t: t.get("exit_time", ""), reverse=True)
     return render_template("partials/trades.html", trades=all_trades[:100])
+
+
+# ---------------------------------------------------------------------------
+# Backtest helpers
+# ---------------------------------------------------------------------------
+
+def load_backtests() -> list[dict]:
+    try:
+        with open(BACKTESTS_JSON) as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def save_backtests(data: list[dict]):
+    with open(BACKTESTS_JSON, "w") as f:
+        json.dump(data, f, indent=2)
+
+def qc_auth():
+    import hashlib
+    ts = str(int(time.time()))
+    h  = hashlib.sha256(f"{QC_TOKEN}:{ts}".encode()).hexdigest()
+    return (QC_USER_ID, h), {"Timestamp": ts}
+
+def _run_backtest_thread(run_id: str, strategy: str, risk: int, dte: int, start_year: int, name: str):
+    import requests
+    try:
+        _running_backtests[run_id]["status"] = "uploading"
+        # Read strategy file
+        file_map = {
+            "spx":  "spx_leaps_baseline_profit_investment.py",
+            "qqq":  "qqq_leaps_strategy.py",
+            "mag7": "mag7_leaps_strategy.py",
+        }
+        fname = file_map.get(strategy, "spx_leaps_baseline_profit_investment.py")
+        fpath = os.path.join(QC_STRATEGY_DIR, fname)
+        content = open(fpath).read()
+        # Patch params
+        for old in ["LEAPS_SLEEVE_MAX = 0.10", "LEAPS_SLEEVE_MAX = 0.15"]:
+            content = content.replace(old, f"LEAPS_SLEEVE_MAX = {risk/100:.2f}")
+        for old in ["CALL_DTE       = 300", "CALL_DTE       = 350"]:
+            content = content.replace(old, f"CALL_DTE       = {dte}")
+        for old in [f"self.SetStartDate({y}, 1, 1)" for y in range(2000, 2020)]:
+            content = content.replace(old, f"self.SetStartDate({start_year}, 1, 1)")
+
+        # Upload
+        a, h = qc_auth()
+        r = requests.post("https://www.quantconnect.com/api/v2/files/update",
+            auth=a, headers=h, json={"projectId": QC_PROJECT_ID, "name": "main.py", "content": content})
+        if not r.json().get("success"):
+            _running_backtests[run_id]["status"] = "error"
+            _running_backtests[run_id]["error"] = "Upload failed"
+            return
+
+        # Compile
+        _running_backtests[run_id]["status"] = "compiling"
+        a, h = qc_auth()
+        r = requests.post("https://www.quantconnect.com/api/v2/compile/create",
+            auth=a, headers=h, json={"projectId": QC_PROJECT_ID})
+        compile_id = r.json().get("compileId")
+        for _ in range(20):
+            time.sleep(3)
+            a, h = qc_auth()
+            r = requests.get("https://www.quantconnect.com/api/v2/compile/read",
+                auth=a, headers=h, params={"projectId": QC_PROJECT_ID, "compileId": compile_id})
+            state = r.json().get("state")
+            if state == "BuildSuccess":
+                break
+            if state == "BuildError":
+                _running_backtests[run_id]["status"] = "error"
+                _running_backtests[run_id]["error"] = "Compile failed"
+                return
+
+        # Launch
+        _running_backtests[run_id]["status"] = "running"
+        a, h = qc_auth()
+        r = requests.post("https://www.quantconnect.com/api/v2/backtests/create",
+            auth=a, headers=h,
+            json={"projectId": QC_PROJECT_ID, "compileId": compile_id, "backtestName": name})
+        bt_id = r.json().get("backtest", {}).get("backtestId")
+        _running_backtests[run_id]["bt_id"] = bt_id
+
+        # Poll
+        for _ in range(120):
+            time.sleep(30)
+            a, h = qc_auth()
+            r = requests.get("https://www.quantconnect.com/api/v2/backtests/read",
+                auth=a, headers=h, params={"projectId": QC_PROJECT_ID, "backtestId": bt_id})
+            bt = r.json().get("backtest", {})
+            if bt.get("error"):
+                _running_backtests[run_id]["status"] = "error"
+                _running_backtests[run_id]["error"] = bt["error"]
+                return
+            if bt.get("completed"):
+                s  = bt.get("statistics", {})
+                rw = bt.get("rollingWindow", {}) or {}
+                yearly = {}
+                for key, val in rw.items():
+                    if key.startswith("M12_"):
+                        yr  = key[4:8]
+                        pnl = val.get("portfolioStatistics", {}).get("totalNetProfit")
+                        if pnl is not None:
+                            yearly[yr] = round(float(pnl) * 100, 1)
+                result = {
+                    "cagr":       s.get("Compounding Annual Return", "—"),
+                    "drawdown":   s.get("Drawdown", "—"),
+                    "sharpe":     s.get("Sharpe Ratio", "—"),
+                    "end_equity": float(s.get("End Equity", 0) or 0),
+                    "win_rate":   s.get("Win Rate", "—"),
+                    "trades":     s.get("Total Orders", "—"),
+                    "yearly":     yearly,
+                }
+                # Save to backtests.json
+                bt_entry = {
+                    "id":          run_id,
+                    "name":        name,
+                    "strategy":    strategy,
+                    "file":        fname,
+                    "description": f"{strategy.upper()} LEAPS — Risk {risk}%, DTE {dte}, from {start_year}",
+                    "params":      {"risk": risk, "dte": dte, "start_year": start_year, "capital": 100000},
+                    "qc_id":       bt_id,
+                    "run_date":    datetime.now().strftime("%Y-%m-%d"),
+                    "status":      "completed",
+                    "results":     result,
+                }
+                data = load_backtests()
+                data.append(bt_entry)
+                save_backtests(data)
+                _running_backtests[run_id]["status"] = "completed"
+                _running_backtests[run_id]["result"] = result
+                return
+
+        _running_backtests[run_id]["status"] = "error"
+        _running_backtests[run_id]["error"] = "Timed out"
+    except Exception as e:
+        _running_backtests[run_id]["status"] = "error"
+        _running_backtests[run_id]["error"] = str(e)
+
+
+# ---------------------------------------------------------------------------
+# Routes — Backtests
+# ---------------------------------------------------------------------------
+
+@app.route("/backtests")
+@login_required
+def backtests_page():
+    return render_template("backtests.html")
+
+@app.route("/api/backtests")
+@login_required
+def api_backtests():
+    return jsonify(load_backtests())
+
+@app.route("/api/backtests/run", methods=["POST"])
+@login_required
+def api_backtests_run():
+    body      = request.get_json(force=True) or {}
+    strategy  = body.get("strategy", "spx")
+    risk      = int(body.get("risk", 10))
+    dte       = int(body.get("dte", 300))
+    start_year = int(body.get("start_year", 2010))
+    name      = body.get("name") or f"{strategy.upper()} Risk{risk}% DTE{dte} {start_year}"
+    run_id    = str(uuid.uuid4())[:8]
+    _running_backtests[run_id] = {"status": "starting", "name": name, "bt_id": None}
+    t = threading.Thread(target=_run_backtest_thread,
+                         args=(run_id, strategy, risk, dte, start_year, name), daemon=True)
+    t.start()
+    return jsonify({"run_id": run_id, "name": name})
+
+@app.route("/api/backtests/status/<run_id>")
+@login_required
+def api_backtests_status(run_id: str):
+    info = _running_backtests.get(run_id, {"status": "not_found"})
+    return jsonify(info)
+
+@app.route("/api/backtests/delete/<bt_id>", methods=["POST"])
+@login_required
+def api_backtests_delete(bt_id: str):
+    data = load_backtests()
+    data = [b for b in data if b["id"] != bt_id]
+    save_backtests(data)
+    return jsonify({"success": True})
 
 
 # ---------------------------------------------------------------------------

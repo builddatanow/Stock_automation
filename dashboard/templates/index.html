@@ -65,30 +65,6 @@ body {
 .ticker-tab.active.tab-spx  { border-bottom: 3px solid #8b5cf6; }
 .ticker-tab.active.tab-all  { border-bottom: 3px solid #22c55e; }
 
-/* ── SPX mode bar ── */
-#spx-mode-bar {
-  background: #fff;
-  border-bottom: 2px solid #8b5cf6;
-  padding: 8px 28px;
-  display: none;
-  align-items: center;
-  gap: 12px;
-}
-.mode-pill {
-  padding: 5px 20px;
-  border-radius: 20px;
-  border: 1.5px solid #cbd5e1;
-  background: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  color: #64748b;
-  transition: all .15s;
-}
-.mode-pill:hover { border-color: #8b5cf6; color: #7c3aed; }
-.mode-pill.active-live  { background: #ecfdf5; border-color: #059669; color: #059669; }
-.mode-pill.active-demo  { background: #f3f4f6; border-color: #6b7280; color: #4b5563; }
-
 /* ── Cards ── */
 .card {
   background: #fff;
@@ -246,11 +222,15 @@ body {
   border: 1.5px solid #86efac;
   border-radius: 10px; padding: 18px 20px;
 }
-.spx-demo-card {
-  background: #f9fafb;
-  border: 1.5px solid #d1d5db;
-  border-radius: 10px; padding: 18px 20px;
+
+/* ── Chart bot tabs ── */
+.chart-tab {
+  font-size: 11px; padding: 3px 10px; border-radius: 5px;
+  border: 1.5px solid #dde3ee; background: #fff;
+  color: #64748b; cursor: pointer; transition: all .15s; font-weight: 500;
 }
+.chart-tab:hover { border-color: #3b82f6; color: #2563eb; }
+.chart-tab.active { background: #eff6ff; border-color: #3b82f6; color: #2563eb; font-weight: 700; }
 
 /* ── Visibility control ── */
 .ticker-section { display: block; }
@@ -279,18 +259,16 @@ body {
   </div>
 
   <div id="clock"></div>
-</div>
-
-<!-- ── SPX Mode Bar (shown only when SPX tab active) ── -->
-<div id="spx-mode-bar">
-  <span style="font-size:12px; color:#7c3aed; font-weight:600;"><i class="bi bi-graph-up-arrow me-1"></i>SPX 0 DTE &nbsp;&mdash;&nbsp; Account:</span>
-  <button class="mode-pill active-live" id="pill-live" onclick="setSpxMode('live')">
-    <i class="bi bi-circle-fill me-1" style="font-size:8px;"></i>Live
-  </button>
-  <button class="mode-pill" id="pill-demo" onclick="setSpxMode('demo')">
-    <i class="bi bi-circle me-1" style="font-size:8px;"></i>Demo
-  </button>
-  <span style="font-size:11px; color:#94a3b8; margin-left:8px;"><i class="bi bi-clock me-1"></i>1PM ET entry &middot; Capital: $10,000</span>
+  <a href="/backtests" style="font-size:12px; color:#94a3b8; text-decoration:none; display:flex; align-items:center; gap:5px; padding:5px 12px; border-radius:6px; border:1px solid #334155; transition:all .15s;"
+     onmouseover="this.style.color='#f1f5f9';this.style.borderColor='#475569';"
+     onmouseout="this.style.color='#94a3b8';this.style.borderColor='#334155';">
+    <i class="bi bi-bar-chart-line"></i> Backtests
+  </a>
+  <a href="/logout" style="font-size:12px; color:#64748b; text-decoration:none; display:flex; align-items:center; gap:5px; padding:5px 10px; border-radius:6px; border:1px solid #334155; transition:all .15s;"
+     onmouseover="this.style.color='#f1f5f9';this.style.borderColor='#475569';"
+     onmouseout="this.style.color='#64748b';this.style.borderColor='#334155';">
+    <i class="bi bi-box-arrow-right"></i> Logout
+  </a>
 </div>
 
 <div class="container-fluid px-4 py-3" style="max-width:1600px; margin:0 auto;">
@@ -322,13 +300,18 @@ body {
     <!-- Equity Chart -->
     <div class="col-xl-7 col-lg-6 ticker-section" data-show="all eth btc spx">
       <div class="card h-100">
-        <div class="card-header">
-          <i class="bi bi-graph-up" style="color:#3b82f6;"></i>
-          Equity Curve
-          <span class="label-muted">Cumulative P&amp;L &middot; SPX demo = dashed</span>
+        <div class="card-header" style="flex-wrap:wrap; gap:8px;">
+          <i class="bi bi-bar-chart-line" style="color:#3b82f6;"></i>
+          Daily P&amp;L
+          <div class="d-flex gap-1 ms-auto flex-wrap" id="chart-tabs">
+            <button class="chart-tab active" onclick="switchChartBot('spx', this)">SPX Live</button>
+            <button class="chart-tab" onclick="switchChartBot('eth_0dte', this)">ETH 0DTE</button>
+            <button class="chart-tab" onclick="switchChartBot('eth_7dte', this)">ETH 7DTE</button>
+            <button class="chart-tab" onclick="switchChartBot('btc_0dte', this)">BTC 0DTE</button>
+          </div>
         </div>
-        <div class="card-body">
-          <canvas id="equityChart" height="120"></canvas>
+        <div class="card-body" style="position:relative;">
+          <canvas id="equityChart" height="110"></canvas>
         </div>
       </div>
     </div>
@@ -371,8 +354,7 @@ body {
         <button class="filter-btn active" onclick="setTradeFilter(this, '')">All</button>
         <button class="filter-btn" onclick="setTradeFilter(this, 'eth')">ETH</button>
         <button class="filter-btn" onclick="setTradeFilter(this, 'btc')">BTC</button>
-        <button class="filter-btn" onclick="setTradeFilter(this, 'spx-live')">SPX Live</button>
-        <button class="filter-btn" onclick="setTradeFilter(this, 'spx-demo')">SPX Demo</button>
+        <button class="filter-btn" onclick="setTradeFilter(this, 'spx-live')">SPX</button>
       </div>
     </div>
     <div class="card-body p-0">
@@ -428,7 +410,6 @@ updateClock();
 
 // ── Ticker Tabs ──
 let currentTicker = 'all';
-let currentSpxMode = 'live';
 
 function setTicker(ticker, btn) {
   currentTicker = ticker;
@@ -437,10 +418,6 @@ function setTicker(ticker, btn) {
   document.querySelectorAll('.ticker-tab').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
 
-  // Show/hide SPX mode bar
-  const modeBar = document.getElementById('spx-mode-bar');
-  modeBar.style.display = (ticker === 'spx') ? 'flex' : 'none';
-
   // Apply pnl row filter
   applyPnlFilter();
 
@@ -448,84 +425,179 @@ function setTicker(ticker, btn) {
   if (ticker === 'all') {
     setTradeFilter(document.querySelector('[onclick="setTradeFilter(this, \'\')"]'), '');
   } else if (ticker === 'spx') {
-    const f = currentSpxMode === 'demo' ? 'spx-demo' : 'spx-live';
-    const btn2 = document.querySelector(`[onclick="setTradeFilter(this, '${f}')"]`);
-    if (btn2) setTradeFilter(btn2, f);
+    const btn2 = document.querySelector(`[onclick="setTradeFilter(this, 'spx-live')"]`);
+    if (btn2) setTradeFilter(btn2, 'spx-live');
   } else {
     const btn2 = document.querySelector(`[onclick="setTradeFilter(this, '${ticker}')"]`);
     if (btn2) setTradeFilter(btn2, ticker);
   }
 }
 
-function setSpxMode(mode) {
-  currentSpxMode = mode;
-  document.getElementById('pill-live').className = 'mode-pill' + (mode === 'live' ? ' active-live' : '');
-  document.getElementById('pill-demo').className = 'mode-pill' + (mode === 'demo' ? ' active-demo' : '');
-
-  // Sync trade filter
-  const f = mode === 'demo' ? 'spx-demo' : 'spx-live';
-  const btn2 = document.querySelector(`[onclick="setTradeFilter(this, '${f}')"]`);
-  if (btn2) setTradeFilter(btn2, f);
-
-  // Sync SPX stats section mode
-  applySpxStatsMode();
-}
-
-function applySpxStatsMode() {
-  // Show/hide live vs demo box in spx.html partial
-  document.querySelectorAll('.spx-live-card, .spx-demo-card').forEach(el => {
-    if (currentTicker !== 'spx') return;
-    const isLiveBox = el.classList.contains('spx-live-card');
-    el.style.opacity = (currentSpxMode === 'live') === isLiveBox ? '1' : '0.35';
-  });
-}
-
 function applyPnlFilter() {
   document.querySelectorAll('#pnl-summary tbody tr[data-ticker]').forEach(row => {
     const t = row.dataset.ticker;
-    const m = row.dataset.mode;
     let show = true;
-    if (currentTicker !== 'all') {
-      if (t !== currentTicker) show = false;
-      if (t === 'spx' && m !== currentSpxMode) show = false;
-    }
+    if (currentTicker !== 'all' && t !== currentTicker) show = false;
     row.style.display = show ? '' : 'none';
   });
 }
 
-// ── Equity Chart ──
+// ── Equity Chart (bar + line combo) ──
 let equityChart = null;
-function loadChart() {
-  fetch('/api/chart').then(r => r.json()).then(datasets => {
-    const ctx = document.getElementById('equityChart').getContext('2d');
-    if (equityChart) equityChart.destroy();
-    equityChart = new Chart(ctx, {
-      type: 'line',
-      data: { datasets },
-      options: {
-        responsive: true,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: { labels: { color: '#64748b', font: { size: 12 }, boxWidth: 14, padding: 18 } },
-          tooltip: {
-            backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
-            titleColor: '#94a3b8', bodyColor: '#f1f5f9', padding: 10,
-            callbacks: { label: ctx => ` ${ctx.dataset.label}: $${ctx.parsed.y.toFixed(2)}` }
+let chartBotId  = 'spx';
+let allChartData = {};
+
+const BOT_LINE_COLOR = {
+  spx:     '#10b981',
+  eth_0dte:'#3b82f6',
+  eth_7dte:'#06b6d4',
+  btc_0dte:'#f59e0b',
+};
+
+function fmtMoney(v) {
+  return (v >= 0 ? '+$' : '-$') + Math.abs(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function switchChartBot(botId, btn) {
+  chartBotId = botId;
+  document.querySelectorAll('.chart-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderComboChart();
+}
+
+function renderComboChart() {
+  const bot = allChartData[chartBotId];
+  const canvas = document.getElementById('equityChart');
+  const ctx = canvas.getContext('2d');
+  if (equityChart) { equityChart.destroy(); equityChart = null; }
+
+  if (!bot || !bot.points || bot.points.length === 0) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '13px Segoe UI';
+    ctx.textAlign = 'center';
+    ctx.fillText('No data yet', canvas.width / 2, canvas.height / 2);
+    return;
+  }
+
+  const pts        = bot.points;
+  const labels     = pts.map(p => p.x);
+  const dailyVals  = pts.map(p => p.daily);
+  const cumVals    = pts.map(p => p.cumulative);
+  const lineColor  = BOT_LINE_COLOR[chartBotId] || '#6366f1';
+
+  const barColors = dailyVals.map(v =>
+    v >= 0 ? 'rgba(5,150,105,0.75)' : 'rgba(220,38,38,0.75)'
+  );
+  const barBorder = dailyVals.map(v =>
+    v >= 0 ? '#059669' : '#dc2626'
+  );
+
+  equityChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Daily P&L',
+          data: dailyVals,
+          backgroundColor: barColors,
+          borderColor: barBorder,
+          borderWidth: 1,
+          borderRadius: 2,
+          yAxisID: 'yBar',
+          order: 2,
+        },
+        {
+          type: 'line',
+          label: 'Cumulative',
+          data: cumVals,
+          borderColor: lineColor,
+          backgroundColor: 'transparent',
+          borderWidth: 2.5,
+          tension: 0,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+          pointHoverBackgroundColor: lineColor,
+          pointHoverBorderColor: '#fff',
+          pointHoverBorderWidth: 2,
+          yAxisID: 'yCum',
+          order: 1,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      animation: { duration: 400 },
+      interaction: { mode: 'index', intersect: false },
+      layout: { padding: { top: 8, right: 8 } },
+      plugins: {
+        legend: {
+          position: 'top',
+          align: 'end',
+          labels: {
+            color: '#475569',
+            font: { size: 11, weight: '600' },
+            boxWidth: 14,
+            boxHeight: 10,
+            padding: 16,
           }
         },
-        scales: {
-          x: {
-            type: 'category',
-            ticks: { color: '#94a3b8', font: { size: 11 }, maxRotation: 0, maxTicksLimit: 10 },
-            grid: { color: '#f1f5f9' }
-          },
-          y: {
-            ticks: { color: '#94a3b8', font: { size: 11 }, callback: v => '$' + v.toFixed(0) },
-            grid: { color: '#f1f5f9' }
+        tooltip: {
+          backgroundColor: '#0f172a',
+          borderColor: '#1e293b',
+          borderWidth: 1,
+          titleColor: '#94a3b8',
+          titleFont: { size: 11 },
+          bodyColor: '#f1f5f9',
+          bodyFont: { size: 12, weight: '600' },
+          padding: 12,
+          cornerRadius: 8,
+          callbacks: {
+            label: c => `  ${c.dataset.label}: ${fmtMoney(c.parsed.y)}`
           }
         }
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: '#94a3b8', font: { size: 10.5 },
+            maxRotation: 0, maxTicksLimit: 10, padding: 6,
+          },
+          grid: { color: '#f8fafc' },
+          border: { color: '#e2e8f0' },
+        },
+        yBar: {
+          position: 'left',
+          title: { display: true, text: 'Daily P&L', color: '#94a3b8', font: { size: 10 } },
+          ticks: {
+            color: '#94a3b8', font: { size: 10.5 }, padding: 6, maxTicksLimit: 6,
+            callback: v => (v >= 0 ? '+' : '') + '$' + Math.abs(v).toLocaleString()
+          },
+          grid: { color: '#f1f5f9', lineWidth: 1 },
+          border: { color: 'transparent' },
+        },
+        yCum: {
+          position: 'right',
+          title: { display: true, text: 'Cumulative', color: '#94a3b8', font: { size: 10 } },
+          ticks: {
+            color: '#94a3b8', font: { size: 10.5 }, padding: 6, maxTicksLimit: 6,
+            callback: v => (v >= 0 ? '+' : '') + '$' + Math.abs(v).toLocaleString()
+          },
+          grid: { drawOnChartArea: false },
+          border: { color: 'transparent' },
+        }
       }
-    });
+    }
+  });
+}
+
+function loadChart() {
+  fetch('/api/chart_daily').then(r => r.json()).then(data => {
+    allChartData = data;
+    renderComboChart();
   });
 }
 loadChart();
@@ -589,8 +661,7 @@ function applyTradeFilter() {
 document.addEventListener('htmx:afterSwap', e => {
   const id = e.detail.target && e.detail.target.id;
   if (id === 'trade-tbody') applyTradeFilter();
-  if (id === 'pnl-summary') { applyPnlFilter(); }
-  if (id === 'spx-stats') applySpxStatsMode();
+  if (id === 'pnl-summary') applyPnlFilter();
 });
 </script>
 

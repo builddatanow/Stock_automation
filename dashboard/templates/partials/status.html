@@ -60,13 +60,6 @@
             <button class="btn btn-sm btn-outline-success py-1 px-3" style="font-size:11px; border-radius:6px;"><i class="bi bi-play-fill me-1"></i>Start</button>
           </form>
         {% endif %}
-        {% if c.running is not none %}
-        <form method="post" action="/bot/{{ c.id }}/autorestart" class="d-inline ms-auto">
-          <button class="btn btn-sm py-1 px-3 {% if c.auto %}btn-success{% else %}btn-outline-secondary{% endif %}" style="font-size:11px; border-radius:6px;">
-            <i class="bi bi-arrow-repeat me-1"></i>Auto {{ 'ON' if c.auto else 'OFF' }}
-          </button>
-        </form>
-        {% endif %}
       </div>
 
     </div>
