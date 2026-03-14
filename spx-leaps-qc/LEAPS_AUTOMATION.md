@@ -254,6 +254,16 @@ All runs on QC Project ID `28932760`. Period: 2000-01-01 to 2026-02-28 unless no
 
 Best overall balance of CAGR (18.2%) and risk-adjusted returns. Adding the DD put (#7) matches DD reduction of Norm PE (#6) with a more reliable, price-action-based trigger — though CAGR is slightly lower due to put cost drag in non-crisis years.
 
+### Risk & DTE Parameter Sweep (DD Put strategy, 2000–2026)
+
+| Variant | CAGR | Drawdown | End Equity | Sharpe | Trades | Win% |
+|---------|------|----------|------------|--------|--------|------|
+| Risk 10% / DTE 300 (base) | 17.2% | 42.7% | $6.21M | 0.548 | 1,104 | 61% |
+| Risk 15% / DTE 300 | 21.5% | 50.0% | $15.70M | 0.591 | 1,478 | 63% |
+| Risk 10% / DTE 350 | 14.4% | 42.7% | $3.32M | 0.464 | 1,055 | 60% |
+
+**Conclusion:** DTE 350 underperforms — more theta decay, slower response. Risk 15% boosts CAGR by +4.3% but raises drawdown from 42.7% → 50%. Use Risk 15% for aggressive accounts, Risk 10% for conservative.
+
 ### DD Put Trigger — Historical Fire Dates
 
 The put buy triggers when SPX drops >10% from its 52-week high. This fired on 20 occasions across the backtest period:
@@ -299,6 +309,61 @@ The put buy triggers when SPX drops >10% from its 52-week high. This fired on 20
 | 2008 | -25.7% | GFC | Rapid decline exceeded crash exit speed |
 | 2015 | -13.6% | China shock | Sharp mid-year drop, put expiry drag |
 | 2022 | -18.8% | Rate hike bear | Slow grind down — crash rules triggered late |
+
+---
+
+## Multi-Asset LEAPS Comparison (2010–2026, $100,000 initial capital)
+
+Testing the same LEAPS strategy logic across SPX, QQQ, and Mag7 top-2 momentum.
+
+### Overall Results
+
+| Strategy | CAGR | Drawdown | End Equity | Sharpe | Win% | Notes |
+|----------|------|----------|------------|--------|------|-------|
+| **Mag7 Top2 Momentum** | **44.9%** | 63.7% | **$37.25M** | **1.031** | 66% | Top 2 Mag7 by 3-month momentum, rotate monthly |
+| SPX Base (DD Put) | 17.2% | **42.7%** | $6.21M | 0.548 | 61% | Best drawdown, most stable |
+| QQQ LEAPS | 13.6% | 64.9% | $2.73M | 0.40 | 58% | High volatility hurts |
+| QQQ Tuned (crash -2.5% + DDput 15%) | 11.6% | 75.4% | $1.71M | 0.35 | 48% | Tuning made it worse — whipsaws |
+
+### Yearly Returns Comparison
+
+| Year | Mag7 Top2 | SPX Base | QQQ |
+|------|-----------|----------|-----|
+| 2010 | +12.6% | +13.3% | +13.3% |
+| 2011 | +6.2% | +6.4% | +6.4% |
+| 2012 | +25.2% | +3.6% | -20.4% |
+| 2013 | +71.4% | +89.7% | +83.1% |
+| 2014 | +7.0% | +45.9% | +31.4% |
+| 2015 | +52.8% | -13.6% | +4.5% |
+| 2016 | +70.7% | +10.0% | +15.3% |
+| 2017 | +85.8% | +45.9% | +86.5% |
+| 2018 | -20.1% | +0.3% | -35.9% |
+| 2019 | +67.4% | +69.2% | +85.2% |
+| 2020 | +103.2% | +34.5% | +15.0% |
+| 2021 | +106.2% | +35.9% | +55.7% |
+| 2022 | -53.7% | -18.8% | -50.3% |
+| 2023 | +203.8% | +98.2% | +94.6% |
+| 2024 | +158.7% | +148.5% | +69.7% |
+| 2025 | +41.2% | +4.8% | +43.4% |
+
+### Key Takeaways
+
+- **Mag7 dominates on returns** — 44.9% CAGR, Sharpe 1.031, $37M end equity. Monster years in 2020/2021/2023/2024 from NVDA, META, MSFT LEAPS leverage.
+- **SPX is the safest** — lowest drawdown (42.7%), most consistent, no -50% years.
+- **QQQ is the worst of both worlds** — lower CAGR than Mag7, higher drawdown than SPX. Not suitable for this LEAPS approach.
+- **QQQ tuning backfired** — tighter crash rules caused whipsaws, made results worse. QQQ needs a fundamentally different approach (bull call spreads or momentum-filtered shorter DTE).
+
+### Mag7 Weakness
+2022 (-53.7%) and 2018 (-20.1%) are pure tech selloffs. Adding a DD put hedge to Mag7 is the next logical step to reduce these drawdowns.
+
+### Strategy Files
+
+| File | Description |
+|------|-------------|
+| `spx_leaps_baseline_profit_investment.py` | SPX LEAPS (SPY75+TLT15+DD Put) — best balanced strategy |
+| `qqq_leaps_strategy.py` | QQQ LEAPS — same logic on QQQ (not recommended) |
+| `mag7_leaps_strategy.py` | Mag7 Top2 momentum LEAPS — highest CAGR, highest risk |
+| `check_put_triggers.py` | Shows historical DD put trigger dates |
 
 ---
 
