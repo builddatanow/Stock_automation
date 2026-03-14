@@ -505,5 +505,46 @@
         "2025": 2.1
       }
     }
+  },
+  {
+    "id": "ecab14e6",
+    "name": "SPX Risk10% DTE300 2010",
+    "strategy": "spx",
+    "file": "spx_leaps_baseline_profit_investment.py",
+    "description": "SPX LEAPS \u2014 Risk 10%, DTE 300, from 2010",
+    "params": {
+      "risk": 10,
+      "dte": 300,
+      "start_year": 2010
+    },
+    "qc_id": "dd688859b89ac319ef3b2843ae1214a1",
+    "run_date": "2026-03-14",
+    "status": "completed",
+    "results": {
+      "cagr": "28.660%",
+      "drawdown": "39.400%",
+      "sharpe": "0.818",
+      "end_equity": 5579902.22,
+      "win_rate": "73%",
+      "trades": "820",
+      "yearly": {
+        "2010": 12.6,
+        "2011": 6.2,
+        "2012": 3.3,
+        "2013": 83.3,
+        "2014": 49.9,
+        "2015": -14.7,
+        "2016": 10.1,
+        "2017": 45.2,
+        "2018": -0.3,
+        "2019": 73.5,
+        "2020": 26.3,
+        "2021": 36.1,
+        "2022": -19.8,
+        "2023": 100.2,
+        "2024": 148.5,
+        "2025": 5.6
+      }
+    }
   }
 ]

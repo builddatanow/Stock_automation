@@ -345,7 +345,7 @@ def login():
         if (request.form.get("username") == DASHBOARD_USER and
                 request.form.get("password") == DASHBOARD_PASSWORD):
             session["logged_in"] = True
-            next_url = request.args.get("next") or url_for("index")
+            next_url = request.args.get("next") or url_for("home")
             return redirect(next_url)
         error = "Invalid username or password."
     return render_template("login.html", error=error)
@@ -362,6 +362,12 @@ def logout():
 # ---------------------------------------------------------------------------
 
 @app.route("/")
+@login_required
+def home():
+    return render_template("home.html")
+
+
+@app.route("/bots")
 @login_required
 def index():
     return render_template("index.html")

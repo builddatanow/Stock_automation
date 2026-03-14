@@ -2,6 +2,7 @@
 {% macro fmt(v) %}{% if v > 0 %}+${{ "%.2f"|format(v) }}{% elif v < 0 %}-${{ "%.2f"|format(v|abs) }}{% else %}$0.00{% endif %}{% endmacro %}
 {% macro fmtc(v) %}${{ "{:,.0f}".format(v) }}{% endmacro %}
 
+<div class="table-responsive-mobile">
 <table class="table table-sm mb-0">
   <thead>
     <tr>
@@ -64,3 +65,4 @@
     </tr>
   </tfoot>
 </table>
+</div>
