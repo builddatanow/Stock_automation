@@ -71,7 +71,7 @@ def launch(project_id, compile_id):
     r = requests.post("https://www.quantconnect.com/api/v2/backtests/create",
         auth=a, headers=h,
         json={"projectId": project_id, "compileId": compile_id,
-              "backtestName": "Mag7 PMCC — LEAPS + Weekly Income"})
+              "backtestName": "Mag7 PMCC — 30DTE + Earnings/FOMC Filter"})
     bt_id = r.json().get("backtest", {}).get("backtestId")
     print(f"Backtest ID: {bt_id}")
     return bt_id

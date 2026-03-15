@@ -1,6 +1,6 @@
 # region imports
 from AlgorithmImports import *
-from datetime import timedelta, date
+from datetime import timedelta, date, datetime
 import math
 # endregion
 
@@ -52,7 +52,8 @@ class Mag7PMCCStrategy(QCAlgorithm):
     SHORT_ROLL_DELTA          = 0.35   # roll if delta breaches this
 
     # ── Earnings filter ─────────────────────────────────────
-    EARNINGS_PRECLOSE_DAYS = 2   # close existing short N days before earnings
+    EARNINGS_PRECLOSE_DAYS  = 2  # close existing short N days before earnings
+    EARNINGS_WINDOW_BUFFER  = 5  # ± day buffer around estimated earnings date
 
     # ── FOMC dates (skip selling on day-of and day-before) ──
     FOMC_DATES = {
@@ -217,36 +218,75 @@ class Mag7PMCCStrategy(QCAlgorithm):
     # Earnings filter helpers
     # ────────────────────────────────────────────────────────
     def _next_earnings_date(self, ticker):
-        """Return next earnings date for ticker using Morningstar fundamentals, or None."""
+        """Estimate next earnings = last filing date + 77 days.
+
+        QC Morningstar: FileDate is a FinancialStatementsFileDate (multi-period
+        field). Access .ThreeMonths for the most recent quarterly filing date.
+        SEC filings are ~14 days after the announcement, so:
+          next announcement ≈ FileDate.ThreeMonths + 77 days  (91 - 14)
+        """
         try:
             sym  = self.mag7_equity[ticker]
+            if sym not in self.Securities:
+                return None
             fund = self.Securities[sym].Fundamentals
             if fund is None:
                 return None
-            ed = fund.EarningReports.EarningDate
-            if ed is not None:
-                # QC returns a DateTime — convert to python date
-                ed_date = ed.date() if hasattr(ed, "date") else ed
-                if ed_date >= self.Time.date():
-                    return ed_date
+
+            # FileDate is a multi-period field — grab the latest quarterly value
+            fd_raw = fund.FinancialStatements.FileDate.ThreeMonths
+            if fd_raw is None:
+                return None
+
+            # Convert C# DateTime (PascalCase) or Python datetime to date
+            fd_date = None
+            try:
+                # C# DateTime exposed via Pythonnet
+                fd_date = date(int(fd_raw.Year), int(fd_raw.Month), int(fd_raw.Day))
+            except AttributeError:
+                pass
+
+            if fd_date is None:
+                try:
+                    fd_date = fd_raw.date()  # Python datetime
+                except:
+                    pass
+
+            if fd_date is None:
+                try:
+                    fd_date = datetime.strptime(str(fd_raw)[:10], "%Y-%m-%d").date()
+                except:
+                    pass
+
+            if fd_date is None:
+                return None
+
+            # Ignore stale filings older than 150 days
+            if (self.Time.date() - fd_date).days > 150:
+                return None
+
+            return fd_date + timedelta(days=77)
         except Exception as e:
-            self.Log(f"[{ticker}] earnings lookup error: {e}")
+            self.Log(f"[{ticker}] earnings_date error: {e}")
         return None
 
     def _earnings_in_window(self, ticker, expiry_date):
-        """True if earnings falls between today and expiry (inclusive)."""
+        """True if estimated earnings ± buffer overlaps [today, expiry]."""
         ed = self._next_earnings_date(ticker)
         if ed is None:
             return False
-        return self.Time.date() <= ed <= expiry_date
+        ed_start = ed - timedelta(days=self.EARNINGS_WINDOW_BUFFER)
+        ed_end   = ed + timedelta(days=self.EARNINGS_WINDOW_BUFFER)
+        today    = self.Time.date()
+        return ed_start <= expiry_date and ed_end >= today
 
     def _earnings_within_days(self, ticker, days):
-        """True if earnings is within `days` calendar days from today."""
+        """True if estimated earnings (± buffer) is within `days` from today."""
         ed = self._next_earnings_date(ticker)
         if ed is None:
             return False
         diff = (ed - self.Time.date()).days
-        return 0 <= diff <= days
+        return -self.EARNINGS_WINDOW_BUFFER <= diff <= days + self.EARNINGS_WINDOW_BUFFER
 
     # ────────────────────────────────────────────────────────
     # FOMC filter helpers
