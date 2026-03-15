@@ -8,13 +8,18 @@ import math
 # MSFT PMCC Strategy with Conditional Put Protection
 #
 # Structure:
-#   Core     : SPY 75% + TLT 15%
-#   LEAPS    : 10% in deep-ITM MSFT calls (delta ~0.70, 240-420 DTE)
-#   Income   : Sell 30-DTE OTM calls (delta ~0.20, 21-35 DTE)
-#   Hedge    : Buy OTM put (delta ~0.25, 45-60 DTE) when:
-#              - VIX > 25, OR
-#              - MSFT drops > 8% from its 20-day rolling high
-#              Close put when VIX < 22 AND drawdown < 5%, or at 50% profit
+#   Core       : SPY 75% + TLT 15%
+#   LEAPS      : 15% in deep-ITM MSFT calls (delta ~0.70, 360-540 DTE / ~450 DTE)
+#   Extra Call : If MSFT drops 25% from LEAPS entry spot → buy 1 extra 600-DTE call
+#   Income     : Sell 30-DTE OTM calls (delta ~0.20, 21-35 DTE)
+#   Hedge      : Buy OTM put (delta ~0.25, 45-60 DTE) when:
+#                - VIX > 25, OR
+#                - MSFT drops > 8% from 20-day rolling high
+#                Close when VIX < 22 AND drawdown < 5%, or at 50% profit
+#
+# LEAPS profit-taking:
+#   - Close 50% of position when LEAPS gains 100% (2x entry price)
+#   - Close remaining 50% when LEAPS gains 150% (2.5x entry price)
 #
 # Filters:
 #   - Skip short if earnings falls within the option's expiry window
@@ -29,78 +34,74 @@ class MsftPMCCStrategy(QCAlgorithm):
     # ── Core portfolio weights ──────────────────────────────
     CORE_SPY_WEIGHT  = 0.75
     CORE_TLT_WEIGHT  = 0.15
-    LEAPS_BUDGET_PCT = 0.10      # % of portfolio for MSFT LEAPS
+    LEAPS_BUDGET_PCT = 0.15      # 15% risk per trade
 
-    # ── Long call (LEAPS) params ────────────────────────────
-    LONG_CALL_TARGET_DTE_MIN = 240
-    LONG_CALL_TARGET_DTE_MAX = 420
-    LONG_CALL_TARGET_DELTA   = 0.70
-    LONG_CALL_REPLACE_DTE    = 120   # roll when DTE falls below this
-    MAX_SPREAD_PCT           = 0.20  # max bid/ask spread as % of mid
+    # ── Long call (LEAPS) params — target 450 DTE ───────────
+    LONG_CALL_TARGET_DTE_MIN  = 360
+    LONG_CALL_TARGET_DTE_MAX  = 540
+    LONG_CALL_TARGET_DELTA    = 0.70
+    LONG_CALL_REPLACE_DTE     = 180  # roll when DTE falls below this
+    MAX_SPREAD_PCT            = 0.20
+
+    # ── LEAPS profit-take levels ────────────────────────────
+    LEAPS_TAKE_50PCT_AT   = 1.00   # close 50% of LEAPS when up 100% (2x)
+    LEAPS_TAKE_REST_AT    = 1.50   # close remaining when up 150% (2.5x)
+
+    # ── Extra call (600 DTE) on 25% MSFT drawdown ──────────
+    EXTRA_CALL_DTE_MIN         = 540
+    EXTRA_CALL_DTE_MAX         = 660
+    EXTRA_CALL_DRAWDOWN_TRIGGER = 0.25   # buy extra when MSFT -25% from entry spot
 
     # ── Short call (30-DTE) params ──────────────────────────
     SHORT_CALL_TARGET_DTE_MIN = 21
     SHORT_CALL_TARGET_DTE_MAX = 35
     SHORT_CALL_TARGET_DELTA   = 0.20
-    SHORT_PROFIT_TAKE         = 0.50   # buy back at 50% profit
-    SHORT_ROLL_DELTA          = 0.35   # roll if delta breaches this
+    SHORT_PROFIT_TAKE         = 0.50
+    SHORT_ROLL_DELTA          = 0.35
 
     # ── Put protection params ───────────────────────────────
     PUT_TARGET_DTE_MIN    = 45
     PUT_TARGET_DTE_MAX    = 60
-    PUT_TARGET_DELTA      = 0.25    # OTM put target delta
-    PUT_PROFIT_TAKE       = 0.50    # close put at 50% gain
-    VIX_HEDGE_ON          = 25      # buy put when VIX crosses above
-    VIX_HEDGE_OFF         = 22      # close put when VIX drops below (AND drawdown clear)
-    DRAWDOWN_HEDGE_ON     = 0.08    # buy put when MSFT drops 8% from 20-day high
-    DRAWDOWN_HEDGE_OFF    = 0.05    # close put when drawdown recovers below 5%
-    ROLLING_HIGH_DAYS     = 20      # lookback for drawdown trigger
+    PUT_TARGET_DELTA      = 0.25
+    PUT_PROFIT_TAKE       = 0.50
+    VIX_HEDGE_ON          = 25
+    VIX_HEDGE_OFF         = 22
+    DRAWDOWN_HEDGE_ON     = 0.08
+    DRAWDOWN_HEDGE_OFF    = 0.05
+    ROLLING_HIGH_DAYS     = 20
 
     # ── Earnings filter ─────────────────────────────────────
     EARNINGS_PRECLOSE_DAYS = 2
     EARNINGS_WINDOW_BUFFER = 5
 
-    # ── FOMC dates (skip selling on day-of and day-before) ──
+    # ── FOMC dates ──────────────────────────────────────────
     FOMC_DATES = {
-        # 2015
         date(2015,1,28), date(2015,3,18), date(2015,4,29), date(2015,6,17),
         date(2015,7,29), date(2015,9,17), date(2015,10,28), date(2015,12,16),
-        # 2016
         date(2016,1,27), date(2016,3,16), date(2016,4,27), date(2016,6,15),
         date(2016,7,27), date(2016,9,21), date(2016,11,2), date(2016,12,14),
-        # 2017
         date(2017,2,1),  date(2017,3,15), date(2017,5,3),  date(2017,6,14),
         date(2017,7,26), date(2017,9,20), date(2017,11,1), date(2017,12,13),
-        # 2018
         date(2018,1,31), date(2018,3,21), date(2018,5,2),  date(2018,6,13),
         date(2018,8,1),  date(2018,9,26), date(2018,11,8), date(2018,12,19),
-        # 2019
         date(2019,1,30), date(2019,3,20), date(2019,5,1),  date(2019,6,19),
         date(2019,7,31), date(2019,9,18), date(2019,10,30), date(2019,12,11),
-        # 2020
         date(2020,1,29), date(2020,3,3),  date(2020,3,15), date(2020,4,29),
         date(2020,6,10), date(2020,7,29), date(2020,9,16), date(2020,11,5),
         date(2020,12,16),
-        # 2021
         date(2021,1,27), date(2021,3,17), date(2021,4,28), date(2021,6,16),
         date(2021,7,28), date(2021,9,22), date(2021,11,3), date(2021,12,15),
-        # 2022
         date(2022,1,26), date(2022,3,16), date(2022,5,4),  date(2022,6,15),
         date(2022,7,27), date(2022,9,21), date(2022,11,2), date(2022,12,14),
-        # 2023
         date(2023,2,1),  date(2023,3,22), date(2023,5,3),  date(2023,6,14),
         date(2023,7,26), date(2023,9,20), date(2023,11,1), date(2023,12,13),
-        # 2024
         date(2024,1,31), date(2024,3,20), date(2024,5,1),  date(2024,6,12),
         date(2024,7,31), date(2024,9,18), date(2024,11,7), date(2024,12,18),
-        # 2025
         date(2025,1,29), date(2025,3,19), date(2025,5,7),  date(2025,6,18),
         date(2025,7,30), date(2025,9,17), date(2025,10,29), date(2025,12,17),
-        # 2026
         date(2026,1,28), date(2026,3,18), date(2026,4,29), date(2026,6,17),
     }
 
-    # ── Risk / misc ─────────────────────────────────────────
     RF_RATE = 0.045
 
     # ────────────────────────────────────────────────────────
@@ -110,12 +111,10 @@ class MsftPMCCStrategy(QCAlgorithm):
         self.SetCash(100_000)
         self.SetBenchmark("MSFT")
 
-        # Core
         self.spy = self.AddEquity("SPY", Resolution.Daily).Symbol
         self.tlt = self.AddEquity("TLT", Resolution.Daily).Symbol
         self.vix = self.AddData(CBOE, "VIX", Resolution.Daily).Symbol
 
-        # MSFT equity + options
         msft_eq = self.AddEquity("MSFT", Resolution.Daily)
         msft_eq.SetDataNormalizationMode(DataNormalizationMode.Adjusted)
         self.msft = msft_eq.Symbol
@@ -124,30 +123,39 @@ class MsftPMCCStrategy(QCAlgorithm):
         msft_opt.SetFilter(self._option_filter)
         self.msft_opt = msft_opt.Symbol
 
-        # Rolling high for drawdown trigger
         self.msft_high_window = RollingWindow[float](self.ROLLING_HIGH_DAYS)
 
-        # Position state
-        self.long_call_symbol      = None
-        self.long_call_entry_price = 0.0
-        self.long_call_qty         = 0
+        # ── Primary LEAPS state ──
+        self.long_call_symbol        = None
+        self.long_call_entry_price   = 0.0
+        self.long_call_qty           = 0
+        self.long_call_50pct_taken   = False   # flag: 50% profit already closed
+        self.leaps_entry_spot        = 0.0     # MSFT spot when LEAPS was opened
 
+        # ── Extra call (600 DTE on -25% drawdown) state ──
+        self.extra_call_symbol       = None
+        self.extra_call_entry_price  = 0.0
+        self.extra_call_qty          = 0
+        self.extra_call_50pct_taken  = False
+        self.extra_call_triggered    = False   # only buy once per LEAPS cycle
+
+        # ── Short call state ──
         self.short_call_symbol       = None
         self.short_call_entry_credit = 0.0
         self.short_call_qty          = 0
         self.short_call_open_date    = None
         self.last_short_sale_date    = None
 
-        self.put_symbol       = None
-        self.put_entry_cost   = 0.0
-        self.put_qty          = 0
-        self.put_open_date    = None
+        # ── Put hedge state ──
+        self.put_symbol     = None
+        self.put_entry_cost = 0.0
+        self.put_qty        = 0
+        self.put_open_date  = None
 
         self.last_core_rebal = None
 
         self.SetWarmUp(self.ROLLING_HIGH_DAYS + 5)
 
-        # Manage shorts and puts 30 min after open, Mon-Fri
         self.Schedule.On(
             self.DateRules.Every(
                 DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday,
@@ -157,11 +165,12 @@ class MsftPMCCStrategy(QCAlgorithm):
         )
 
     def _option_filter(self, universe):
+        # Extend to 660 to cover 600-DTE extra call
         return (
             universe
             .IncludeWeeklys()
             .Strikes(-20, 10)
-            .Expiration(3, 420)
+            .Expiration(3, 660)
         )
 
     # ────────────────────────────────────────────────────────
@@ -171,11 +180,9 @@ class MsftPMCCStrategy(QCAlgorithm):
         if self.IsWarmingUp:
             return
 
-        # Track MSFT rolling high
         if data.Bars.ContainsKey(self.msft):
             self.msft_high_window.Add(float(data.Bars[self.msft].Close))
 
-        # Core rebalance weekly
         if self.last_core_rebal is None or (self.Time.date() - self.last_core_rebal).days >= 7:
             self._rebalance_core()
             self.last_core_rebal = self.Time.date()
@@ -184,30 +191,27 @@ class MsftPMCCStrategy(QCAlgorithm):
         vix  = self._get_price(self.vix)
 
         self._manage_long_call(data, spot, vix)
+        self._manage_extra_call(data, spot, vix)
         self._manage_short_call(spot, vix)
         self._manage_put(spot, vix)
 
     # ────────────────────────────────────────────────────────
-    # Scheduled: sell short call + buy/close put
+    # Scheduled: open short + put entries
     # ────────────────────────────────────────────────────────
     def _scheduled_manage(self):
         if self.IsWarmingUp:
             return
-
         spot = self._get_price(self.msft)
         vix  = self._get_price(self.vix)
-
         if spot <= 0:
             return
 
-        # Short call entry
-        if (self.long_call_symbol is not None
+        if (self._has_long_call()
                 and self.short_call_symbol is None
                 and self.last_short_sale_date != self.Time.date()):
             self._sell_short_call(spot, vix)
 
-        # Put protection entry
-        if self.long_call_symbol is not None and self.put_symbol is None:
+        if self._has_long_call() and self.put_symbol is None:
             if self._hedge_needed(spot, vix):
                 self._buy_put(spot, vix)
 
@@ -219,16 +223,53 @@ class MsftPMCCStrategy(QCAlgorithm):
         self.SetHoldings(self.tlt, self.CORE_TLT_WEIGHT)
 
     # ────────────────────────────────────────────────────────
-    # Long call (LEAPS) management
+    # Primary LEAPS management (450 DTE, 15% budget)
     # ────────────────────────────────────────────────────────
     def _manage_long_call(self, data, spot, vix):
         if self._has_long_call():
-            dte = (self.long_call_symbol.ID.Date.date() - self.Time.date()).days
+            sym = self.long_call_symbol
+            dte = (sym.ID.Date.date() - self.Time.date()).days
+
+            # ── Partial profit-taking ──
+            sec = self.Securities.get(sym)
+            if sec is not None:
+                current_mid = self._mid_from_security(sec)
+                entry       = self.long_call_entry_price
+
+                if entry > 0 and current_mid > 0:
+                    gain = (current_mid - entry) / entry
+
+                    # First take: close 50% at +100%
+                    if not self.long_call_50pct_taken and gain >= self.LEAPS_TAKE_50PCT_AT:
+                        qty_held = self.Portfolio[sym].Quantity
+                        close_qty = max(int(qty_held / 2), 1)
+                        self.MarketOrder(sym, -close_qty)
+                        self.long_call_50pct_taken = True
+                        self.Log(
+                            f"[MSFT] LEAPS 50% PROFIT TAKE | {self.Time.date()} | "
+                            f"gain={gain:.0%} mid={current_mid:.2f} close={close_qty}"
+                        )
+                        return
+
+                    # Second take: close all at +150%
+                    if self.long_call_50pct_taken and gain >= self.LEAPS_TAKE_REST_AT:
+                        qty_held = self.Portfolio[sym].Quantity
+                        if qty_held > 0:
+                            self.MarketOrder(sym, -qty_held)
+                            self.Log(
+                                f"[MSFT] LEAPS FULL PROFIT TAKE | {self.Time.date()} | "
+                                f"gain={gain:.0%} mid={current_mid:.2f}"
+                            )
+                            self._reset_leaps_state()
+                        return
+
+            # Roll when DTE < threshold and no short open
             if dte <= self.LONG_CALL_REPLACE_DTE and not self._has_short_call():
                 self.Log(f"[MSFT] Roll LEAPS DTE={dte}")
                 self._close_long_call("replace_dte")
                 self._open_long_call(data, spot, vix)
             return
+
         self._open_long_call(data, spot, vix)
 
     def _open_long_call(self, data, spot, vix):
@@ -250,10 +291,10 @@ class MsftPMCCStrategy(QCAlgorithm):
             candidates.append((abs(delta - self.LONG_CALL_TARGET_DELTA), c, delta, mid, dte))
 
         if not candidates:
-            self.Log("[MSFT] No valid LEAPS candidate")
+            self.Log("[MSFT] No valid LEAPS candidate (450 DTE)")
             return
 
-        candidates.sort(key=lambda x: (x[0], abs(x[4] - 300)))
+        candidates.sort(key=lambda x: (x[0], abs(x[4] - 450)))
         _, contract, delta, mid, dte = candidates[0]
 
         budget = self.Portfolio.TotalPortfolioValue * self.LEAPS_BUDGET_PCT
@@ -263,10 +304,14 @@ class MsftPMCCStrategy(QCAlgorithm):
         self.long_call_symbol      = contract.Symbol
         self.long_call_entry_price = mid
         self.long_call_qty         = qty
+        self.long_call_50pct_taken = False
+        self.leaps_entry_spot      = spot
+        self.extra_call_triggered  = False   # reset extra call flag for new LEAPS cycle
 
         self.Log(
             f"[MSFT] LEAPS ENTRY | {self.Time.date()} | "
-            f"Strike={contract.Strike:.2f} DTE={dte} Delta={delta:.2f} Mid={mid:.2f} Qty={qty}"
+            f"Strike={contract.Strike:.2f} DTE={dte} Delta={delta:.2f} "
+            f"Mid={mid:.2f} Qty={qty} EntrySpot={spot:.2f}"
         )
 
     def _close_long_call(self, reason):
@@ -275,9 +320,117 @@ class MsftPMCCStrategy(QCAlgorithm):
             if qty > 0:
                 self.MarketOrder(self.long_call_symbol, -qty)
         self.Log(f"[MSFT] LEAPS EXIT [{reason}] | {self.Time.date()}")
+        self._reset_leaps_state()
+
+    def _reset_leaps_state(self):
         self.long_call_symbol      = None
         self.long_call_entry_price = 0.0
         self.long_call_qty         = 0
+        self.long_call_50pct_taken = False
+        self.leaps_entry_spot      = 0.0
+
+    # ────────────────────────────────────────────────────────
+    # Extra call: 600 DTE when MSFT -25% from LEAPS entry spot
+    # ────────────────────────────────────────────────────────
+    def _manage_extra_call(self, data, spot, vix):
+        # Close extra call: same profit-taking rules
+        if self._has_extra_call():
+            sym = self.extra_call_symbol
+            sec = self.Securities.get(sym)
+            dte = (sym.ID.Date.date() - self.Time.date()).days
+
+            if sec is not None:
+                current_mid = self._mid_from_security(sec)
+                entry       = self.extra_call_entry_price
+
+                if entry > 0 and current_mid > 0:
+                    gain = (current_mid - entry) / entry
+
+                    if not self.extra_call_50pct_taken and gain >= self.LEAPS_TAKE_50PCT_AT:
+                        qty_held  = self.Portfolio[sym].Quantity
+                        close_qty = max(int(qty_held / 2), 1)
+                        self.MarketOrder(sym, -close_qty)
+                        self.extra_call_50pct_taken = True
+                        self.Log(
+                            f"[MSFT] EXTRA CALL 50% TAKE | {self.Time.date()} | "
+                            f"gain={gain:.0%} mid={current_mid:.2f}"
+                        )
+                        return
+
+                    if self.extra_call_50pct_taken and gain >= self.LEAPS_TAKE_REST_AT:
+                        qty_held = self.Portfolio[sym].Quantity
+                        if qty_held > 0:
+                            self.MarketOrder(sym, -qty_held)
+                            self.Log(
+                                f"[MSFT] EXTRA CALL FULL TAKE | {self.Time.date()} | "
+                                f"gain={gain:.0%}"
+                            )
+                            self._reset_extra_call_state()
+                        return
+
+            # Roll or close at near-expiry
+            if dte <= self.LONG_CALL_REPLACE_DTE:
+                qty_held = self.Portfolio.get(sym, None)
+                if qty_held and self.Portfolio[sym].Quantity > 0:
+                    self.MarketOrder(sym, -self.Portfolio[sym].Quantity)
+                    self.Log(f"[MSFT] EXTRA CALL EXPIRY CLOSE | {self.Time.date()}")
+                    self._reset_extra_call_state()
+            return
+
+        # Open extra call when MSFT drops 25% from LEAPS entry spot (once per cycle)
+        if (not self.extra_call_triggered
+                and self._has_long_call()
+                and self.leaps_entry_spot > 0
+                and spot <= self.leaps_entry_spot * (1 - self.EXTRA_CALL_DRAWDOWN_TRIGGER)):
+            self._open_extra_call(data, spot, vix)
+
+    def _open_extra_call(self, data, spot, vix):
+        chain = data.OptionChains.get(self.msft_opt)
+        if chain is None:
+            return
+
+        candidates = []
+        for c in chain:
+            if c.Right != OptionRight.Call:
+                continue
+            dte = (c.Expiry.date() - self.Time.date()).days
+            if dte < self.EXTRA_CALL_DTE_MIN or dte > self.EXTRA_CALL_DTE_MAX:
+                continue
+            mid = self._mid(c)
+            if mid <= 0 or not self._spread_ok(c, mid):
+                continue
+            delta = self._get_delta(c, spot, vix)
+            candidates.append((abs(delta - self.LONG_CALL_TARGET_DELTA), c, delta, mid, dte))
+
+        if not candidates:
+            self.Log("[MSFT] No valid 600-DTE extra call candidate")
+            return
+
+        candidates.sort(key=lambda x: (x[0], abs(x[4] - 600)))
+        _, contract, delta, mid, dte = candidates[0]
+
+        budget = self.Portfolio.TotalPortfolioValue * self.LEAPS_BUDGET_PCT
+        qty    = max(int(budget / (mid * 100)), 1)
+
+        self.MarketOrder(contract.Symbol, qty)
+        self.extra_call_symbol      = contract.Symbol
+        self.extra_call_entry_price = mid
+        self.extra_call_qty         = qty
+        self.extra_call_50pct_taken = False
+        self.extra_call_triggered   = True
+
+        drawdown = (self.leaps_entry_spot - spot) / self.leaps_entry_spot
+        self.Log(
+            f"[MSFT] EXTRA CALL ENTRY (600 DTE) | {self.Time.date()} | "
+            f"Strike={contract.Strike:.2f} DTE={dte} Delta={delta:.2f} "
+            f"Mid={mid:.2f} Qty={qty} MSFT_DD={drawdown:.1%}"
+        )
+
+    def _reset_extra_call_state(self):
+        self.extra_call_symbol      = None
+        self.extra_call_entry_price = 0.0
+        self.extra_call_qty         = 0
+        self.extra_call_50pct_taken = False
 
     # ────────────────────────────────────────────────────────
     # Short call (30-DTE) management
@@ -286,9 +439,8 @@ class MsftPMCCStrategy(QCAlgorithm):
         if not self._has_long_call():
             return
 
-        # FOMC filter
         if self._is_fomc_nearby():
-            self.Log(f"[MSFT] Skip short: FOMC nearby")
+            self.Log("[MSFT] Skip short: FOMC nearby")
             return
 
         long_strike = float(self.long_call_symbol.ID.StrikePrice)
@@ -363,10 +515,8 @@ class MsftPMCCStrategy(QCAlgorithm):
         sym = self.short_call_symbol
         sec = self.Securities[sym]
 
-        # Pre-earnings close
         if self._earnings_within_days(self.EARNINGS_PRECLOSE_DAYS):
-            ed = self._next_earnings_date()
-            self.Log(f"[MSFT] Pre-earnings short close (earnings={ed})")
+            self.Log(f"[MSFT] Pre-earnings short close")
             self._close_short_call("pre_earnings")
             return
 
@@ -378,10 +528,9 @@ class MsftPMCCStrategy(QCAlgorithm):
                 max((sym.ID.Date.date() - self.Time.date()).days, 0)
             )
 
-        entry_credit = self.short_call_entry_credit
-        dte          = (sym.ID.Date.date() - self.Time.date()).days
+        dte = (sym.ID.Date.date() - self.Time.date()).days
 
-        if entry_credit > 0 and current_mid <= entry_credit * (1 - self.SHORT_PROFIT_TAKE):
+        if self.short_call_entry_credit > 0 and current_mid <= self.short_call_entry_credit * (1 - self.SHORT_PROFIT_TAKE):
             self._close_short_call("take_profit")
             return
 
@@ -412,7 +561,6 @@ class MsftPMCCStrategy(QCAlgorithm):
     # Put protection management
     # ────────────────────────────────────────────────────────
     def _hedge_needed(self, spot, vix):
-        """True if VIX is elevated OR MSFT is in significant drawdown."""
         if vix > self.VIX_HEDGE_ON:
             return True
         if self.msft_high_window.IsReady:
@@ -422,7 +570,6 @@ class MsftPMCCStrategy(QCAlgorithm):
         return False
 
     def _hedge_clear(self, spot, vix):
-        """True when both VIX and drawdown have recovered — safe to close put."""
         if vix > self.VIX_HEDGE_OFF:
             return False
         if self.msft_high_window.IsReady:
@@ -471,17 +618,15 @@ class MsftPMCCStrategy(QCAlgorithm):
 
         qty = max(self.long_call_qty, 1)
         self.MarketOrder(sym, qty)
-
         self.put_symbol     = sym
         self.put_entry_cost = mid
         self.put_qty        = qty
         self.put_open_date  = self.Time.date()
 
-        vix_val = self._get_price(self.vix)
         self.Log(
-            f"[MSFT] PUT HEDGE ENTRY | {self.Time.date()} | "
+            f"[MSFT] PUT ENTRY | {self.Time.date()} | "
             f"Strike={float(sym.ID.StrikePrice):.2f} DTE={dte} Delta={delta:.2f} "
-            f"Cost={mid:.2f} VIX={vix_val:.1f}"
+            f"Cost={mid:.2f} VIX={vix:.1f}"
         )
 
     def _manage_put(self, spot, vix):
@@ -493,22 +638,15 @@ class MsftPMCCStrategy(QCAlgorithm):
         dte = (sym.ID.Date.date() - self.Time.date()).days
 
         current_mid = self._mid_from_security(sec)
-        if current_mid <= 0:
-            current_mid = 0.0
 
-        entry_cost = self.put_entry_cost
-
-        # Take profit at 50%
-        if entry_cost > 0 and current_mid >= entry_cost * (1 + self.PUT_PROFIT_TAKE):
+        if self.put_entry_cost > 0 and current_mid >= self.put_entry_cost * (1 + self.PUT_PROFIT_TAKE):
             self._close_put("take_profit")
             return
 
-        # Close if hedge no longer needed
         if self._hedge_clear(spot, vix):
             self._close_put("hedge_clear")
             return
 
-        # Close at expiry
         if dte <= 0:
             self._close_put("expiry")
 
@@ -575,21 +713,15 @@ class MsftPMCCStrategy(QCAlgorithm):
         return -self.EARNINGS_WINDOW_BUFFER <= diff <= days + self.EARNINGS_WINDOW_BUFFER
 
     # ────────────────────────────────────────────────────────
-    # FOMC filter helpers
+    # FOMC helpers
     # ────────────────────────────────────────────────────────
     def _is_fomc_nearby(self):
         today = self.Time.date()
-        for fd in self.FOMC_DATES:
-            if (fd - today).days in (0, 1):
-                return True
-        return False
+        return any((fd - today).days in (0, 1) for fd in self.FOMC_DATES)
 
     def _fomc_in_window(self, expiry_date):
         today = self.Time.date()
-        for fd in self.FOMC_DATES:
-            if today <= fd <= expiry_date:
-                return True
-        return False
+        return any(today <= fd <= expiry_date for fd in self.FOMC_DATES)
 
     # ────────────────────────────────────────────────────────
     # State helpers
@@ -598,6 +730,11 @@ class MsftPMCCStrategy(QCAlgorithm):
         return (self.long_call_symbol is not None
                 and self.long_call_symbol in self.Portfolio
                 and self.Portfolio[self.long_call_symbol].Quantity > 0)
+
+    def _has_extra_call(self):
+        return (self.extra_call_symbol is not None
+                and self.extra_call_symbol in self.Portfolio
+                and self.Portfolio[self.extra_call_symbol].Quantity > 0)
 
     def _has_short_call(self):
         return (self.short_call_symbol is not None
