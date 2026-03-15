@@ -535,10 +535,20 @@ class MsftPMCCStrategy(QCAlgorithm):
             return
 
         delta  = self._security_delta(sec, spot, vix)
-        is_itm = spot >= float(sym.ID.StrikePrice)
+        strike = float(sym.ID.StrikePrice)
+        is_itm = spot >= strike
 
-        if delta >= self.SHORT_ROLL_DELTA or is_itm:
-            self._close_short_call("roll_threatened")
+        # If spot has crossed the strike and only 1 day left → close before assignment
+        if is_itm and dte <= 1:
+            self.Log(
+                f"[MSFT] Short call ITM at expiry: spot={spot:.2f} strike={strike:.2f} DTE={dte}"
+            )
+            self._close_short_call("itm_close_pre_expiry")
+            return
+
+        # Roll early only on aggressive delta breach (not on mere ITM crossing)
+        if delta >= self.SHORT_ROLL_DELTA and not is_itm:
+            self._close_short_call("roll_delta_breach")
             self._sell_short_call(spot, vix)
             return
 
