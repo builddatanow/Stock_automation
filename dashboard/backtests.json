@@ -548,6 +548,39 @@
     }
   },
   {
+    "id": "mag7_pmcc_weekly",
+    "name": "Mag7 PMCC — Weekly (no filters)",
+    "strategy": "mag7_pmcc",
+    "file": "mag7_pmcc_strategy.py",
+    "description": "Poor Man's Covered Call on top-2 Mag7 stocks by 63-day momentum. Core: SPY 75% + TLT 15%. LEAPS: deep-ITM calls (delta 0.70, 240-420 DTE). Income: sell weekly OTM calls (delta 0.20, 5-14 DTE). No earnings or FOMC filter — baseline run showing blowout impact.",
+    "params": {
+      "risk": 10,
+      "dte": 7,
+      "start_year": 2010,
+      "capital": 100000
+    },
+    "qc_id": "16509f6eb677226a300271b1fa99aa0e",
+    "run_date": "2026-03",
+    "status": "completed",
+    "results": {
+      "cagr": "27.67%",
+      "drawdown": "33.30%",
+      "sharpe": "0.998",
+      "win_rate": "24%",
+      "total_trades": 10128,
+      "end_equity": 500832,
+      "yearly": {
+        "2010": 12.3,
+        "2011": 6.8,
+        "2012": 6.7,
+        "2013": 94.6,
+        "2014": -2.1,
+        "2015": 33.4,
+        "2016": 109.6
+      }
+    }
+  },
+  {
     "id": "mag7_pmcc_v1",
     "name": "Mag7 PMCC — 30DTE + Earnings/FOMC Filter",
     "strategy": "mag7_pmcc",
