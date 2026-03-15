@@ -32,7 +32,7 @@ class Mag7PMCCStrategy(QCAlgorithm):
     LEAPS_SLEEVE_MAX = 0.10      # total LEAPS budget, split across TOP_N stocks
 
     # ── Mag7 universe ───────────────────────────────────────
-    MAG7_TICKERS  = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA"]
+    MAG7_TICKERS  = ["AAPL", "MSFT", "NVDA", "GOOGL"]   # 4 most liquid — run AMZN/META/TSLA separately
     TOP_N         = 2
     MOMENTUM_DAYS = 63           # 3-month momentum lookback
     RERANK_DAYS   = 21           # re-rank every ~1 month
@@ -119,7 +119,7 @@ class Mag7PMCCStrategy(QCAlgorithm):
 
     # ────────────────────────────────────────────────────────
     def Initialize(self):
-        self.SetStartDate(2010, 1, 1)
+        self.SetStartDate(2015, 1, 1)
         self.SetEndDate(2026, 2, 28)
         self.SetCash(100_000)
         self.SetBenchmark("QQQ")
@@ -150,6 +150,7 @@ class Mag7PMCCStrategy(QCAlgorithm):
         self.top_stocks       = []
         self.last_rerank_date = None
         self.last_core_rebal  = None
+        self._last_slice      = None   # cached for scheduled events
 
         self.SetWarmUp(self.MOMENTUM_DAYS + 10)
 
@@ -175,11 +176,13 @@ class Mag7PMCCStrategy(QCAlgorithm):
         }
 
     def _option_filter(self, universe):
+        # Strikes: LEAPS needs deep ITM (-20), shorts need slightly OTM (+10)
+        # Expiry: start at 3 days so near-expiry shorts retain live pricing
         return (
             universe
             .IncludeWeeklys()
-            .Strikes(-40, 40)
-            .Expiration(3, 450)
+            .Strikes(-20, 10)
+            .Expiration(3, 420)
         )
 
     # ────────────────────────────────────────────────────────
@@ -188,6 +191,8 @@ class Mag7PMCCStrategy(QCAlgorithm):
     def OnData(self, data: Slice):
         if self.IsWarmingUp:
             return
+
+        self._last_slice = data   # cache for scheduled events
 
         # Update momentum history
         for ticker in self.MAG7_TICKERS:
