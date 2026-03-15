@@ -9,7 +9,7 @@ from datetime import datetime, date
 QC_USER_ID = "426855"
 QC_TOKEN   = "a197cd7a8911f9c32603f0f10601e78d4dbf223de66d161b9551551d28723910"
 PROJECT_ID = 29003521
-BT_ID      = "a5d5ea19347963685ebbf15cfbdc40b2"   # MSFT PMCC v3 (ITM close at DTE=1)
+BT_ID      = "9edbc5e5163643710772d258d3c26cf2"   # MSFT PMCC v4 (45 DTE, delta 0.15)
 
 def auth():
     ts = str(int(time.time()))

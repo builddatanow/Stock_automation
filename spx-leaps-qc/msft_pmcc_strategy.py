@@ -53,9 +53,9 @@ class MsftPMCCStrategy(QCAlgorithm):
     EXTRA_CALL_DRAWDOWN_TRIGGER = 0.25   # buy extra when MSFT -25% from entry spot
 
     # ── Short call (30-DTE) params ──────────────────────────
-    SHORT_CALL_TARGET_DTE_MIN = 21
-    SHORT_CALL_TARGET_DTE_MAX = 35
-    SHORT_CALL_TARGET_DELTA   = 0.20
+    SHORT_CALL_TARGET_DTE_MIN = 38
+    SHORT_CALL_TARGET_DTE_MAX = 52
+    SHORT_CALL_TARGET_DELTA   = 0.15
     SHORT_PROFIT_TAKE         = 0.50
     SHORT_ROLL_DELTA          = 0.35
 
