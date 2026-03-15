@@ -546,5 +546,38 @@
         "2025": 5.6
       }
     }
+  },
+  {
+    "id": "mag7_pmcc_v1",
+    "name": "Mag7 PMCC — 30DTE + Earnings/FOMC Filter",
+    "strategy": "mag7_pmcc",
+    "file": "mag7_pmcc_strategy.py",
+    "description": "Poor Man's Covered Call on top-2 Mag7 stocks by 63-day momentum. Core: SPY 75% + TLT 15%. LEAPS sleeve: 10% in deep-ITM calls (delta 0.70, 240-420 DTE). Income: sell 30-DTE OTM calls (delta 0.20). Earnings filter: skip/close short if earnings falls within expiry window. FOMC filter: skip on Fed meeting day or day before.",
+    "params": {
+      "risk": 10,
+      "dte": 30,
+      "start_year": 2010,
+      "capital": 100000
+    },
+    "qc_id": "fe22f3bd0436a652678cc9189de9fc79",
+    "run_date": "2026-03",
+    "status": "completed",
+    "results": {
+      "cagr": "19.25%",
+      "drawdown": "17.50%",
+      "sharpe": "0.993",
+      "win_rate": "74%",
+      "total_trades": 972,
+      "end_equity": 303828,
+      "yearly": {
+        "2010": 12.3,
+        "2011": 6.8,
+        "2012": 7.1,
+        "2013": 97.1,
+        "2014": 22.5,
+        "2015": -0.9,
+        "2016": -8.8
+      }
+    }
   }
 ]
